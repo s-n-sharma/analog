@@ -43,63 +43,117 @@ class VoltageSource(Component):
         self.impedance = None
 
 class GroundNode(Node):
+    """
+    Special node that is always at 0 V.
+    Any attempt to set voltage is ignored.
+    """
     def __init__(self):
         super().__init__()
+        self.voltage = 0
+    
+    @property
+    def voltage(self):
+        return 0
+    
+    @voltage.setter
+    def voltage(self, val):
+        # Ignore any attempts to set ground voltage
+        pass
 
 class DependentVoltageSource(VoltageSource):
     # gain and component
     # always doing nodeForward- nodeBackward
     def __init__(self, value, comp):  
         super().__init__(value)
-        self.comp = comp
-    
-class OperationalAmplifier(Component):
-    def __init__(self, value, R_in, R_out): # gain value
-        super().__init__(value)
-        self.name = "Op Amp"
-        R_in = Resistor(R_in)
-        R_out = Resistor(R_out)
-        ground = GroundNode()
-        
-        self.nodeForward = R_out.nodeBackward
-        self.node_Vplus = R_in.nodeBackward
-        self.node_Vminus = R_in.nodeForward
-        
+        self.comp = comp    
     
 
 class Circuit:
     def __init__(self):
+        self.ground = GroundNode()      # Create a dedicated ground node
         self.components = []
-        self.nodes = set()
-    
+        # Keep track of all nodes, including ground
+        self.nodes = set([self.ground])
+        self.angularFrequency = 0
+
     def addComponent(self, component):
         self.components.append(component)
         self.nodes.add(component.nodeForward)
         self.nodes.add(component.nodeBackward)
-    def connectComponents(self, comp1, comp2):
-        # Create merged node and get old nodes
-        merged_node = Node()
-        removed_node1 = comp1.nodeForward
-        removed_node2 = comp2.nodeBackward
+    def connectComponents(self, comp1, comp2, connectType="FB"):
+        """
+        Merges comp1.nodeForward with comp2.nodeBackward.
+        If either one is the ground node, that node remains the merged node.
+        Otherwise a new node is created for the merge.
+        """
+        if connectType == "FB":
+            node1 = comp1.nodeForward
+            node2 = comp2.nodeBackward
+        elif connectType == "FF":
+            node1 = comp1.nodeForward
+            node2 = comp2.nodeForward
+        elif connectType == "BB":
+            node1 = comp1.nodeBackward
+            node2 = comp2.nodeBackward
+
+        if node1 == node2:
+            return  # Already the same node, nothing to do
+
+        # If either side is already ground, keep ground as the merged node
+        if isinstance(node1, GroundNode) and isinstance(node2, GroundNode):
+            return
+        elif isinstance(node1, GroundNode):
+            merged_node = node1
+            removed_node = node2
+        elif isinstance(node2, GroundNode):
+            merged_node = node2
+            removed_node = node1
+        else:
+            # Neither is ground, so create a new node
+            merged_node = Node()
+            removed_node = None
         
-        # Merge connected components
-        merged_node.connectedComponents = (
-            removed_node1.connectedComponents +
-            removed_node2.connectedComponents
-        )
+        if removed_node:
+            # Merge all connectedComponents of removed_node into merged_node
+            merged_node.connectedComponents += removed_node.connectedComponents
+            for comp in removed_node.connectedComponents:
+                if comp.nodeForward == removed_node:
+                    comp.nodeForward = merged_node
+                if comp.nodeBackward == removed_node:
+                    comp.nodeBackward = merged_node
+            self.nodes.discard(removed_node)
+        else:
+            # We actually merge node1 and node2 into a brand-new node
+            merged_node.connectedComponents = node1.connectedComponents + node2.connectedComponents
+            for comp in merged_node.connectedComponents:
+                if comp.nodeForward in (node1, node2):
+                    comp.nodeForward = merged_node
+                if comp.nodeBackward in (node1, node2):
+                    comp.nodeBackward = merged_node
+            self.nodes.discard(node1)
+            self.nodes.discard(node2)
+            self.nodes.add(merged_node)
+
+    def connectNodeToGround(self, node):
+        """
+        Explicitly merge any existing node with the ground node.
+        Useful if you decide to ground a node after creation.
+        """
+        if node is self.ground:
+            # Already ground, nothing to do
+            return
         
-        # Update all components' node references
-        for component in merged_node.connectedComponents:
-            # Update forward references
-            if component.nodeForward in {removed_node1, removed_node2}:
-                component.nodeForward = merged_node
-            # Update backward references
-            if component.nodeBackward in {removed_node1, removed_node2}:
-                component.nodeBackward = merged_node
+        # Merge all connectedComponents of 'node' into the ground node
+        self.ground.connectedComponents += node.connectedComponents
+        # Update each component that was connected to 'node'
+        for comp in node.connectedComponents:
+            if comp.nodeForward == node:
+                comp.nodeForward = self.ground
+            if comp.nodeBackward == node:
+                comp.nodeBackward = self.ground
         
-        # Update circuit nodes
-        self.nodes -= {removed_node1, removed_node2}
-        self.nodes.add(merged_node)
+        # Remove the old node from the circuit
+        self.nodes.discard(node)
 
     def setCircuitFrequency(self, omega):
         self.angularFrequency = omega
@@ -108,138 +162,117 @@ class Circuit:
 
         
     def solveSystem(self):
-        impedances = [comp.impedance for comp in self.components]
-        
-        # Get reference node (ground)
-        largest_vsrc = self._get_largest_vsource()
-        if largest_vsrc:
-            ref_node = largest_vsrc.nodeBackward
-        else:  # Fallback if no voltage sources
-            ref_node = next(iter(self.nodes)) if self.nodes else None
-            if not ref_node:
-                raise ValueError("No nodes in circuit")
-        
-        non_ref_nodes = [n for n in self.nodes if n != ref_node]
+        if not self.nodes:
+            raise ValueError("No nodes in the circuit.")
+        if not self.components:
+            raise ValueError("No components in the circuit.")
+
+        ref_node = self.ground
+        # Our node-unknowns are all non-ground nodes
+        non_ref_nodes = [n for n in self.nodes if n is not ref_node]
         num_nodes = len(non_ref_nodes)
-        
-        # Count voltage sources
-        v_sources = [c for c in self.components if isinstance(c, VoltageSource) and not isinstance(c, DependentVoltageSource)]
+     
+
+        # Partition out voltage sources
+        v_sources = [c for c in self.components 
+                     if isinstance(c, VoltageSource) and not isinstance(c, DependentVoltageSource)]
         num_v_sources = len(v_sources)
-        
+
+        # Partition out dependent sources
         dep_sources = [c for c in self.components if isinstance(c, DependentVoltageSource)]
         num_d_sources = len(dep_sources)
-    
-        # create matrix
+
+        # Construct system A x = b
         size = num_nodes + num_v_sources + num_d_sources
         A = np.zeros((size, size), dtype=complex)
         b = np.zeros(size, dtype=complex)
         
         # Create node index mapping
         node_indices = {node: idx for idx, node in enumerate(non_ref_nodes)}
-        
-        # Process regular nodes (KCL equations)
+        # 1) KCL for each non-reference node
+    
         for node_idx, node in enumerate(non_ref_nodes):
             for comp in node.connectedComponents:
-                # Determine connected node
-                other_node = comp.nodeForward if comp.nodeBackward == node else comp.nodeBackward
-                
-                # Handle component contribution
-                if isinstance(comp, (Resistor, Capacitor)):
-                    admittance = 1/comp.impedance if comp.impedance != 0 else 0
-                    
+                # Figure out the "other" node for this component
+                if comp.nodeForward == node:
+                    other_node = comp.nodeBackward
+                else:
+                    other_node = comp.nodeForward
+
+                # set admittance 
+                if isinstance(comp, (Resistor, Capacitor)) and comp.impedance != 0:
+                    admittance = 1.0 / comp.impedance
+
                     A[node_idx, node_idx] += admittance
-                    
-                    # Mutual admittance if not reference
                     if other_node in node_indices:
                         A[node_idx, node_indices[other_node]] -= admittance
-                        
-                elif isinstance(comp, VoltageSource):
-                    pass
-        
-        # Add voltage source equations
+
+        # 2) Independent Voltage Source equations
         for vsrc_idx, vsrc in enumerate(v_sources):
             row = num_nodes + vsrc_idx
-            
             n_plus = vsrc.nodeForward
             n_minus = vsrc.nodeBackward
-        
+
+            # Enforce V(n_plus) - V(n_minus) = source voltage
             if n_plus in node_indices:
                 A[row, node_indices[n_plus]] = 1
             if n_minus in node_indices:
                 A[row, node_indices[n_minus]] = -1
             b[row] = vsrc.value
- 
-            current_var_col = num_nodes + vsrc_idx
 
+            # Also, we add a column for the source current:
+            # KCL in the node equations: +I at node_plus, -I at node_minus
+            current_var_col = num_nodes + vsrc_idx
             if n_plus in node_indices:
                 A[node_indices[n_plus], current_var_col] += 1
             if n_minus in node_indices:
                 A[node_indices[n_minus], current_var_col] -= 1
 
+        # 3) Dependent Voltage Source equations
         for dsrc_idx, dsrc in enumerate(dep_sources):
             row = num_nodes + num_v_sources + dsrc_idx
             n_plus = dsrc.nodeForward
             n_minus = dsrc.nodeBackward
+            gain = dsrc.value
 
-            # Build the dependent source constraint: V(n_plus) - V(n_minus) - gain*(V(n1) - V(n2)) = 0
+            # KCL-like: V(n_plus) - V(n_minus) - gain * [V(comp.nodeForward) - V(comp.nodeBackward)] = 0
             if n_plus in node_indices:
                 A[row, node_indices[n_plus]] += 1
             if n_minus in node_indices:
                 A[row, node_indices[n_minus]] -= 1
 
-            gain = dsrc.value
-            n1 = dsrc.comp.nodeForward
-            n2 = dsrc.comp.nodeBackward
-            # Note: subtract the controlling voltage difference
-            if n1 in node_indices:
-                A[row, node_indices[n1]] += gain
-            if n2 in node_indices:
-                A[row, node_indices[n2]] += -gain
+            # controlling voltage
+            ctrl_plus = dsrc.comp.nodeForward
+            ctrl_minus = dsrc.comp.nodeBackward
+            if ctrl_plus in node_indices:
+                A[row, node_indices[ctrl_plus]] += gain
+            if ctrl_minus in node_indices:
+                A[row, node_indices[ctrl_minus]] -= gain
 
-            # Add the stamp for the current variable of the dependent source (similar to independent voltage sources)
+            # The dependent source has a current variable as well:
             current_var_col = num_nodes + num_v_sources + dsrc_idx
             if n_plus in node_indices:
                 A[node_indices[n_plus], current_var_col] += 1
             if n_minus in node_indices:
                 A[node_indices[n_minus], current_var_col] -= 1
-
-     
+ 
         x = np.linalg.solve(A, b)
         
         # Update variables
         for node, idx in node_indices.items():
             node.voltage = x[idx]
-        
-        for vsrc_idx, vsrc in enumerate(v_sources):
-            vsrc.current = x[num_nodes + vsrc_idx] 
-            
-        for dsrc_idx, dsrc in enumerate(dep_sources):
-            dsrc.current = x[num_nodes + num_v_sources + dsrc_idx]       
-        
+
+        # Assign currents through voltage sources (including dependent sources)
+        for i, vsrc in enumerate(v_sources):
+            vsrc.current = x[num_nodes + i]
+        for i, dsrc in enumerate(dep_sources):
+            dsrc.current = x[num_nodes + num_v_sources + i]
+
+        # Finally, for passive components, compute their current from node voltages
         for comp in self.components:
-            if isinstance(comp, (Resistor, Capacitor)):
-                try:
-                    V_plus = comp.nodeForward.voltage
-                    V_minus = comp.nodeBackward.voltage
-                    
-                    # Handle floating components (both nodes non-reference)
-                    if comp.nodeForward != ref_node and comp.nodeBackward != ref_node:
-                        comp.current = (V_plus - V_minus) / comp.impedance
-                    else:
-                        comp.current = (V_plus - V_minus) / comp.impedance
-                        
-                except ZeroDivisionError:
-                    comp.current = float('inf')  # Handle short circuits
-                    print(f"Warning: Zero impedance in {comp.componentName}")
+            if isinstance(comp, (Resistor, Capacitor)) and comp.impedance != 0:
+                v_plus = comp.nodeForward.voltage
+                v_minus = comp.nodeBackward.voltage
+                comp.current = (v_plus - v_minus) / comp.impedance
             
-            
-            
-    def _get_largest_vsource(self):
-        max_voltage = -float('inf')
-        largest_vsrc = None
-        for comp in self.components:
-            if isinstance(comp, VoltageSource) and comp.value > max_voltage:
-                max_voltage = comp.value
-                largest_vsrc = comp
-        return largest_vsrc
 
