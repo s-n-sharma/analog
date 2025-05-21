@@ -1,0 +1,14 @@
+* Simple two‑pole active (Sallen–Key‑style) low‑pass to exercise build_circuit()
+
+* Node legend:
+*   Vin  – input source +
+*   0    – global ground
+*   n1   – internal summing node
+*   Vout – op‑amp output / filter output
+
+V1   Vin     0      1          
+R1   Vin     n1     10k        
+R2   n1      Vout   10k        
+C1   n1      0      10n        
+C2   Vout    0      10n        
+IOP1 Vout    n1     0      100   
