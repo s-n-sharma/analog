@@ -6,9 +6,14 @@
 *   n1   – internal summing node
 *   Vout – op‑amp output / filter output
 
-V1   Vin     0      1          
-R1   Vin     n1     10k        
-R2   n1      Vout   10k        
-C1   n1      0      10n        
-C2   Vout    0      10n        
-IOP1 Vout    n1     0      100   
+* V1   Vin     0      1          
+* R1   Vin     n1     10k        
+* R2   n1      Vout   10k        
+* C1   n1      0      10n        
+* C2   Vout    0      10n        
+* IOP1 Vout    n1     0      100   
+
+V1 Vin 0 1
+R1 Vin Vout 10k
+R2 Vout 0 10k
+C1 Vout 0 10n 

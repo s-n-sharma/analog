@@ -61,6 +61,7 @@ def build_circuit(components):
     for comp in components:
         circuit.addComponent(comp)
         nodes = components[comp]
+        #print("nodes", nodes)
         if isinstance(comp, circ.IdealOpAmp):
             vout, vp, vn = nodes
             if not pin_out.__contains__(vout):
@@ -85,7 +86,10 @@ def build_circuit(components):
     for node in pin_out:
         connectedComps = pin_out[node]
         start = connectedComps[0]
+        print(start)
         for comp in connectedComps[1:]:
+            if node == "Vout":
+                circuit.connectComponents(start[1], start[0], comp[1], comp[0], 1)
             circuit.connectComponents(start[1], start[0], comp[1], comp[0])
     
     return circuit

@@ -6,9 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-components = translator.parse_netlist("TestCircuit.txt")
+components = translator.parse_netlist("example_circuits/graph_17.txt")
 circuit = translator.build_circuit(components)
-op = [i for i in circuit.components if isinstance(i, circ.IdealOpAmp)][0]
 
 import matplotlib.pyplot as plt
 f = np.logspace(1, 5, 400)           
@@ -19,10 +18,9 @@ for i, freq in enumerate(f):
     omega = 2 * np.pi * freq
     circuit.setFrequency(omega)
     V = circuit.solveSystem()
-    Vout = V[op.Vout]
+    Vout = V[circuit.VOUT]
     mag[i] = 20 * np.log10(np.abs(Vout))
     phase[i] = np.angle(Vout, deg=True)
-
 
 plots_dir = Path(__file__).with_suffix('').parent / 'plots'
 plots_dir.mkdir(exist_ok=True)

@@ -30,6 +30,7 @@ class Circuit:
         self.components = []
         self.next_node_id = 1  # incremental node ID allocator (0 is reserved for ground)
         self.frequency = 0
+        self.VOUT = None
     
     def setFrequency(self, omega):
         self.frequency = omega
@@ -37,7 +38,7 @@ class Circuit:
     def addComponent(self, comp):
         self.components.append(comp)
 
-    def connectComponents(self, comp1, term1, comp2, term2):
+    def connectComponents(self, comp1, term1, comp2, term2, isVOUT=False):
         """Connect a terminal of comp1 to a terminal of comp2 (or to a node/ground)."""
         # Helper 
         def get_node(comp, term):
@@ -110,6 +111,14 @@ class Circuit:
             set_node(comp1, term1, node1)
         if comp2 is not None and not isinstance(comp2, (int, float)):
             set_node(comp2, term2, node2)
+        
+        if isVOUT:
+            if isVOUT == 1:
+                self.VOUT = node1
+                return node1
+            else:
+                self.VOUT = node2
+                return node2
 
     def solveSystem(self):
         """uses mna to return dict of voltages."""
