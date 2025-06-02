@@ -1,10 +1,6 @@
 """
 This file produces passive circuits and their magnitude and phase plots, saving them to a file in the following format:
 Circuit Netlist
---------
-Frequency Magnitude
---------
-Frequency Phase
 """
 
 from scipy.cluster.hierarchy import DisjointSet as djs
@@ -17,11 +13,11 @@ import random
 
 def min_deg_func(dic):
     for i in dic.keys():
-        if dic[i] < 3:
+        if dic[i] < 2:
             return False
     return True
 
-MAX_NODES = 5
+MAX_NODES = 15
 
 counter = 0
 
@@ -35,25 +31,59 @@ for i in range(3, MAX_NODES):
             j = 0
             Resistor_count = 0
             Capacitor_count = 0
+            op_amp_count = 0
             #0 is Vin, i+1 is ground, i+2 is vout
             f.write("V1 Vin 0 1\n")
             while (j < EDGE_NUMBER or not djs_conn.connected(0, i) or not djs_conn.connected(i, i+2) or not djs_conn.connected(i+1, i+2) or not (len(djs_conn.subsets()) == 1) or not min_deg_2):
+                
+                component_type = random.randint(0, 2)
+
+                isOpAmp = False
+
+
+                if (component_type == 0):
+                    Resistor_count += 1
+                    component = "R"+str(Resistor_count)
+                    unit = "k"
+                    
+                elif (component_type == 1):
+                    Capacitor_count += 1
+                    component = "C"+str(Capacitor_count)
+                    unit = "n"
+                else:
+                    if op_amp_count > max(0.2*EDGE_NUMBER, 1):
+                        continue
+                    op_amp_count += 1
+                    component = "IOP1"+str(op_amp_count+1)
+                    isOpAmp = True
+                
                 node_1 = random.randint(0, i+2)
                 node_2 = random.randint(0, i+2)
-                deg_count[node_1] += 1
-                deg_count[node_2] += 1
+
                 while (node_2 == node_1):
                     node_2 = random.randint(0, i+2)
+
                 djs_conn.merge(node_1, node_2)
-                component_type = random.randint(0, 1)
-                if (component_type == 0):
-                    component = "R"+str(Resistor_count+1)
-                    Resistor_count += 1
-                    unit = "k"
-                else:
-                    component = "C"+str(Capacitor_count+1)
-                    Capacitor_count += 1
-                    unit = "n"
+                
+                deg_count[node_1] += 1
+                deg_count[node_2] += 1
+
+                if isOpAmp:
+                    node_3 = random.randint(0, i+2)
+                    while (node_3 == node_1 or node_3 == node_2):
+                        node_3 = random.randint(0, i+2)
+                    
+                    djs_conn.merge(node_1, node_3)
+                    deg_count[node_3] += 1
+
+                    if node_3 == 0:
+                        node_3 = "Vin"
+                    elif node_3 == i+1:
+                        node_3 = "0"
+                    elif node_3 == i+2:
+                        node_3 = "Vout"
+                    else:
+                        node_3 = "n"+str(node_3)
                 
                 if node_1 == 0:
                     node_1 = "Vin"
@@ -73,8 +103,12 @@ for i in range(3, MAX_NODES):
                 else:
                     node_2 = "n"+str(node_2)
 
-                comp_strength = random.choice([0.1, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 5, 7.5, 10, 15, 20, 30, 50, 75, 100, 150, 250, 375, 500, 1000])
-                f.write(component+" " + node_1 + " " + node_2+" "+str(comp_strength)+unit+"\n")             
+                if not isOpAmp:
+                    comp_strength = random.choice([0.1, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 5, 7.5, 10, 15, 20, 30, 50, 75, 100, 150, 250, 375, 500, 1000])
+                    f.write(component+" " + node_1 + " " + node_2+" "+str(comp_strength)+unit+"\n")
+                else:
+                    f.write(component+" "+node_1 + " " + node_2 + " " + node_3 + " 100\n")             
+                
                 min_deg_2 = min_deg_func(deg_count)
                 j += 1
             counter += 1

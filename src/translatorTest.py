@@ -6,11 +6,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-components = translator.parse_netlist("example_circuits/graph_17.txt")
+components = translator.parse_netlist("example_circuits/graph_7.txt")
 circuit = translator.build_circuit(components)
 
 import matplotlib.pyplot as plt
-f = np.logspace(1, 5, 400)           
+f = np.logspace(1, 10, 400)           
 mag = np.zeros_like(f, dtype=float)
 phase = np.zeros_like(f, dtype=float)
 

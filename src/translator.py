@@ -46,7 +46,7 @@ def parse_netlist(path: str):
         for line in cleaned_lines(f):
             token = line.split()
             name, nodes, value = token[0], token[1: -1], token[-1]
-            print(name, nodes, value)
+            #print(name, nodes, value)
             try:
                 comp = DEVICE_FACTORY[name[0]](name, value)
             except:
@@ -61,7 +61,6 @@ def build_circuit(components):
     for comp in components:
         circuit.addComponent(comp)
         nodes = components[comp]
-        #print("nodes", nodes)
         if isinstance(comp, circ.IdealOpAmp):
             vout, vp, vn = nodes
             if not pin_out.__contains__(vout):
@@ -86,7 +85,6 @@ def build_circuit(components):
     for node in pin_out:
         connectedComps = pin_out[node]
         start = connectedComps[0]
-        print(start)
         for comp in connectedComps[1:]:
             if node == "Vout":
                 circuit.connectComponents(start[1], start[0], comp[1], comp[0], 1)

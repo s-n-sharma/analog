@@ -1,0 +1,22 @@
+V1 Vin 0 1
+R1 n2 0 2.5k
+C1 n5 n6 50n
+R2 Vin n6 0.1k
+C2 0 n2 20n
+C3 n1 n7 0.75n
+R3 0 n3 2.5k
+IOP12 n6 n3 n4 100
+IOP13 n2 Vin n4 100
+IOP14 Vin n1 n8 100
+R4 n7 0 500k
+C4 n8 n4 100n
+C5 n6 Vin 5n
+IOP15 Vin n1 n6 100
+R5 n8 n7 375k
+R6 n3 n6 15k
+R7 n4 0 0.1k
+C6 n1 n2 375n
+R8 n3 Vin 7.5k
+C7 n5 Vout 10n
+R9 n4 0 2.5k
+C8 n6 Vout 30n

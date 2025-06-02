@@ -1,0 +1,29 @@
+V1 Vin 0 1
+IOP12 n2 n11 0 100
+R1 n2 n8 7.5k
+R2 n6 n5 250k
+R3 n3 n4 0.1k
+C1 n10 Vout 75n
+R4 n6 n7 500k
+IOP13 n7 n3 Vout 100
+IOP14 n8 n3 n2 100
+IOP15 n2 n5 n7 100
+C2 n11 n7 75n
+C3 n8 n9 1n
+C4 n9 n4 0.1n
+C5 n7 n4 2n
+C6 n4 n7 50n
+C7 0 n4 0.1n
+R5 n1 n10 1.5k
+IOP16 n6 n11 n10 100
+R6 n5 0 1k
+IOP17 n1 n6 Vin 100
+R7 n4 n6 15k
+R8 n11 n6 0.1k
+C8 n1 Vin 0.5n
+C9 n4 n9 1000n
+R9 n10 n7 1000k
+R10 0 n8 15k
+R11 n4 n3 250k
+R12 n7 n9 1000k
+R13 Vout Vin 0.1k
