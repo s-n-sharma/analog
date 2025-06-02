@@ -39,55 +39,123 @@ def cleaned_lines(fileobj):
         buf = line
     if buf:
         yield buf
-
 def parse_netlist(path: str):
-    components = {} # stores edges and incident nodes
-    with open(path) as f:
-        for line in cleaned_lines(f):
-            token = line.split()
-            name, nodes, value = token[0], token[1: -1], token[-1]
-            #print(name, nodes, value)
-            try:
-                comp = DEVICE_FACTORY[name[0]](name, value)
-            except:
-                comp = DEVICE_FACTORY[name[:3]](name, value)
-            components.update({comp: nodes})
-    
-    return components
+    """
+    Read a (very small‑signal) SPICE‑style net‑list and return
+    {component‑object: [node‑names]} ready for `build_circuit`.
 
+    Conventions handled
+    -------------------
+    • Two‑terminal devices   :  line    'R1  n‑  n+  value'
+                                stored  ['n+', 'n‑']
+    • IOP op‑amp instance    :  line    'IOP U1  n+  n‑  nout'
+                                stored  ['nout', 'n+', 'n‑']
+    • .subckt / .ends blocks :  parsed but *ignored* (black‑box macro)
+    """
+    comps = {}
+    vout_alias  = None
+    with open(path) as f:
+        inside_subckt = False
+        for line in cleaned_lines(f):
+            tok = line.split()
+            if not tok:
+                continue
+
+            # ─── Skip / leave sub‑ckt definitions ────────────────────
+            hd = tok[0].lower()
+
+            # ── skip labels but *keep* the body ──────────────────────
+            if hd == '.subckt':              # header: ignore, then parse body
+                continue
+            if hd in ('.ends', '.end'):      # footer: ignore
+                continue
+
+
+            name = tok[0]
+            hd   = name.upper()
+
+            # ─── IOP op‑amp instance (no value token) ────────────────
+            if hd.startswith('IOP'):
+                nodes = tok[1:]                       # V+  V‑  Vout
+                if len(nodes) != 3:
+                    raise ValueError("IOP needs exactly 3 nodes")
+                nodes = [nodes[2], nodes[0], nodes[1]]  # → [Vout, V+, V‑]
+                comp  = DEVICE_FACTORY['IOP'](name, None)
+                comps[comp] = nodes
+                continue
+            
+            if hd in ('VOUT', '.VOUT') and len(tok) >= 2:
+                vout_alias = tok[1]
+                continue            # nothing more on this line
+            # ─── Two‑terminal devices  R / C / V … ───────────────────
+            nodes = tok[1:-1]     # [neg, pos] in your convention
+            if len(nodes) != 2:
+                raise ValueError(f"{name}: need exactly two nodes")
+            nodes = [nodes[1], nodes[0]]              # → [pos, neg]
+            value = tok[-1]
+
+            key = name[0].upper()                     # first letter
+            if key not in DEVICE_FACTORY:
+                raise ValueError(f"Unknown device type {name}")
+            comp = DEVICE_FACTORY[key](name, value)
+            comps[comp] = nodes
+    if vout_alias is not None:
+        for nodes in comps.values():
+            for i, n in enumerate(nodes):
+                if n == vout_alias:
+                    nodes[i] = 'VOUT'
+    return comps
 def build_circuit(components):
     circuit = circ.Circuit()
     pin_out = {}
-    for comp in components:
-        circuit.addComponent(comp)
-        nodes = components[comp]
-        if isinstance(comp, circ.IdealOpAmp):
-            vout, vp, vn = nodes
-            if not pin_out.__contains__(vout):
-                pin_out[vout] = []
-            pin_out[vout].append(('vout', comp))
-            if not pin_out.__contains__(vp):
-                pin_out[vp] = []
-            pin_out[vp].append(('v+', comp))
-            if not pin_out.__contains__(vn):
-                pin_out[vn] = []
-            pin_out[vn].append(('v-', comp))
 
+    for comp, nodes in components.items():
+        circuit.addComponent(comp)
+        if isinstance(comp, circ.IdealOpAmp):          
+            vout, vp, vn = nodes
+            pin_out.setdefault(vout, []).append(('vout', comp))
+            pin_out.setdefault(vp,   []).append(('v+',   comp))
+            pin_out.setdefault(vn,   []).append(('v-',   comp))
+        else:                                       
+            p, n = nodes
+            pin_out.setdefault(p, []).append(('p', comp))
+            pin_out.setdefault(n, []).append(('n', comp))
+
+
+    for node, conns in pin_out.items():
+        base_pin = conns[0]
+        for other in conns[1:]:
+            if node.upper() == "VOUT":                
+                circuit.connectComponents(base_pin[1], base_pin[0],
+                                            other[1],  other[0], isVOUT=1)
+            circuit.connectComponents(base_pin[1], base_pin[0],
+                                        other[1],  other[0])
+            
+    if circuit.VOUT is None and 'VOUT' in pin_out:
+        pin, comp = pin_out['VOUT'][0]             # single (pin‑name, obj)
+
+        # find/create a node number
+        node_id = None
+        if isinstance(comp, circ.IdealOpAmp):
+            node_id = {'vout':  'Vout',
+                       'v+':    'Vplus',
+                       'v-':    'Vminus'}[pin]
+            node_id = getattr(comp, node_id)       # may still be None
         else:
-            p,n = nodes
-            if not pin_out.__contains__(p):
-                pin_out[p] = []
-            pin_out[p].append(('p', comp))
-            if not pin_out.__contains__(n):
-                pin_out[n] = []
-            pin_out[n].append(('n', comp))
-    
-    for node in pin_out:
-        connectedComps = pin_out[node]
-        start = connectedComps[0]
-        for comp in connectedComps[1:]:
-            if node == "Vout":
-                circuit.connectComponents(start[1], start[0], comp[1], comp[0], 1)
-            circuit.connectComponents(start[1], start[0], comp[1], comp[0])
-    
+            node_id = getattr(comp, 'p' if pin == 'p' else 'n')
+
+        if node_id is None:                        # not stamped yet
+            node_id = circuit.next_node_id
+            circuit.next_node_id += 1
+            # write it back to the component
+            if isinstance(comp, circ.IdealOpAmp):
+                setattr(comp, {'vout':'Vout','v+':'Vplus','v-':'Vminus'}[pin],
+                        node_id)
+            else:
+                if pin == 'p': comp.p = node_id
+                else:          comp.n = node_id
+
+        circuit.VOUT = node_id                     # finally expose it
+
     return circuit
+

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-components = translator.parse_netlist("example_circuits/graph_7.txt")
+components = translator.parse_netlist("TestCircuit.txt")
 circuit = translator.build_circuit(components)
 
 import matplotlib.pyplot as plt

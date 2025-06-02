@@ -119,149 +119,96 @@ class Circuit:
             else:
                 self.VOUT = node2
                 return node2
-
     def solveSystem(self):
-        """uses mna to return dict of voltages."""
-        # get node ids
+        """This solves MNA with op amps, literally copied from https://lpsa.swarthmore.edu/Systems/Electrical/mna/MNA5.html"""
+        
+        
+        # The first step is isolate the nodes - this allows us to track the voltages 
         node_ids = set()
-        for comp in self.components:
-            if isinstance(comp, IdealOpAmp):
-                # Include op amp terminals
-                if comp.Vplus is not None: node_ids.add(comp.Vplus)
-                if comp.Vminus is not None: node_ids.add(comp.Vminus)
-                if comp.Vout is not None: node_ids.add(comp.Vout)
+        for c in self.components:
+            if isinstance(c, IdealOpAmp):
+                node_ids.update([n for n in (c.Vplus, c.Vminus, c.Vout) if n])
             else:
-                if comp.p is not None: node_ids.add(comp.p)
-                if comp.n is not None: node_ids.add(comp.n)
-        node_ids.discard(0)  # remove ground
-        node_list = sorted(node_ids)
-        N = len(node_list)  # number of non-ground nodes
+                node_ids.update([n for n in (c.p, c.n) if n])
+        node_list  = sorted(node_ids)         
         node_index = {nid: i for i, nid in enumerate(node_list)}
+        N          = len(node_list)           
 
-        # MNA matrices
-        G = np.zeros((N, N), dtype=complex)        # conductance matrix
-        I = np.zeros(N,dtype=complex)            # current injection vector
-        B = np.zeros((N, 0),dtype=complex)       # independent current sources
-        E = np.array([],dtype=complex)           # voltage source vector 
         
-        # handle resistors
-        for comp in self.components:
-            if isinstance(comp, Resistor):
-                a = comp.p or 0
-                b = comp.n or 0
-                if a == 0 and b == 0:
-                    continue  
-                g_val = 1.0 / comp.value if comp.value != 0 else 1e9  # very large resistor is a billion
-                if a != 0:
-                    G[node_index[a], node_index[a]] += g_val
-                if b != 0:
-                    G[node_index[b], node_index[b]] += g_val
-                if a != 0 and b != 0:
-                    G[node_index[a], node_index[b]] -= g_val
-                    G[node_index[b], node_index[a]] -= g_val
-            
-            if isinstance(comp, Capacitor):
-                g_val = 1j * self.frequency * comp.value 
-                a = comp.p or 0
-                b = comp.n or 0
-                if a == 0 and b == 0:
-                    continue  
-                #g_val = 1.0 / comp.value if comp.value != 0 else 1e9  # very large resistor is a billion
-                if a != 0:
-                    G[node_index[a], node_index[a]] += g_val
-                if b != 0:
-                    G[node_index[b], node_index[b]] += g_val
-                if a != 0 and b != 0:
-                    G[node_index[a], node_index[b]] -= g_val
-                    G[node_index[b], node_index[a]] -= g_val
+        # Now we proceed like MNA
+        
+        # The G matrix is like the KCL matrix - think of the node voltage analysis equations (no voltage sources yet)
+        G = np.zeros((N, N), dtype=complex)
+        
+        # RHS of G matrix
+        I = np.zeros(N,      dtype=complex)
 
-        # extra rows for voltages
-        voltage_sources = [comp for comp in self.components if isinstance(comp, VoltageSource)]
-        M = len(voltage_sources)
-        if M > 0:
-            B = np.zeros((N, M))
-            E = np.zeros(M)
-        for j, src in enumerate(voltage_sources):
-            a = src.p or 0
-            b = src.n or 0
-            # KCL: add source current leaving 'a' and entering 'b'
-            if a != 0:
-                B[node_index[a], j] += 1
-            if b != 0:
-                B[node_index[b], j] -= 1
-            # Voltage constraint: Va - Vb = value
-            if a != 0:
-                pass
-            if b != 0:
-                pass
-            E[j] = src.value
+        # helper to fill out G
+        def _stamp(a, b, y):
+            if a: G[node_index[a], node_index[a]] += y
+            if b: G[node_index[b], node_index[b]] += y
+            if a and b:
+                G[node_index[a], node_index[b]] -= y
+                G[node_index[b], node_index[a]] -= y
 
+        # fill in using component's nodes - remember all references to a nodes connect back to previously ID'd ones
+        for c in self.components:
+            if isinstance(c, Resistor):
+                _stamp(c.p or 0, c.n or 0, 1.0 / c.value if c.value else 1e9)
+            elif isinstance(c, Capacitor):
+                _stamp(c.p or 0, c.n or 0, 1j * self.frequency * c.value)
 
-        A_top = np.hstack((G, B))
-        opamps = [comp for comp in self.components if isinstance(comp, IdealOpAmp)]
-        P = len(opamps)
-        total_constraints = M + P
-        if total_constraints > 0:
-            C = np.zeros((total_constraints, N))
-            # Fill in voltage source KVL rows (first M rows of C and E)
-            for j, src in enumerate(voltage_sources):
-                a = src.p or 0
-                b = src.n or 0
-                if a != 0:
-                    C[j, node_index[a]] = 1
-                if b != 0:
-                    C[j, node_index[b]] = -1
-                # E[j] is already set to source voltage
-            # Fill in ideal op amp constraint rows: V+ - V- = 0  (for each op amp)
-            for k, op in enumerate(opamps, start=M):
-                a = op.Vplus or 0
-                b = op.Vminus or 0
-                # Only add if both terminals are defined (else it's floating or trivial)
-                if a != 0 and b != 0:
-                    C[k, node_index[a]] = 1
-                    C[k, node_index[b]] = -1
-                    # Constraint value = 0 (already default in E if extended)
-                elif a != 0 or b != 0:
-                    # If one input is grounded, enforce the other equals 0 (ground)
-                    nid = a if b == 0 else b
-                    C[k, node_index[nid]] = 1
-                    # value 0
-            # Extend E for op amp constraints (zeros for those rows)
-            if P > 0:
-                if E.size == 0:
-                    E = np.zeros(total_constraints)
-                else:
-                    E = np.concatenate((E, np.zeros(P)))
-        else:
-            # No constraints (no op amp or voltage source)
-            C = np.zeros((0, N),dtype=complex)
-            E = np.zeros(0,dtype=complex)
+        # MNA means that voltage sources have an extra currnet current source variable
+        Vsrc   = [c for c in self.components if isinstance(c, VoltageSource)] # id voltage sources
+        M      = len(Vsrc) 
+        OpAmp  = [c for c in self.components if isinstance(c, IdealOpAmp)] # op amps are considered voltage sources (out of vout)
+        P      = len(OpAmp)
 
-        # Remove KCL equations for op amp output nodes (output can source/sink any current)
-        # We do this by removing the row corresponding to each op amp output from A_top and I (KCL equations)
-        rows_to_remove = []
-        for op in opamps:
-            if op.Vout is not None and op.Vout in node_index:
-                rows_to_remove.append(node_index[op.Vout])
+        
+        # These matrices are handling some extra constraints for KCL equations - enforcing the addition/subtraction of voltage sources at nodes
+        B = np.zeros((N, M + P), dtype=complex)           
+        E = np.zeros(M + P,       dtype=complex)          
 
-        for r in sorted(rows_to_remove, reverse=True):
-            A_top = np.delete(A_top, r, axis=0)   # drop KCL row
-            I     = np.delete(I,     r)           # drop matching entry in RHS
+        # voltage sources
+        for j, s in enumerate(Vsrc): # voltage difference across nodes is s.value
+            if s.p: B[node_index[s.p], j] += 1
+            if s.n: B[node_index[s.n], j] -= 1
+            E[j] = s.value
 
-        # Assemble full augmented matrix:
-        A_bottom = np.hstack((C, np.zeros((C.shape[0], B.shape[1]))), dtype=complex)
+        # op amps - note this like a floating voltage source (for this equation)
+        for k, op in enumerate(OpAmp, start=M):
+            if op.Vout and op.Vout in node_index:
+                B[node_index[op.Vout], k] = 1          
+
+        # these are the current equations - one for every constraint
+        C = np.zeros((M + P, N), dtype=complex)
+
+        # KVL rows for the independent V‑sources
+        for j, s in enumerate(Vsrc):
+            if s.p: C[j, node_index[s.p]] =  1
+            if s.n: C[j, node_index[s.n]] = -1
+
+        # golden rule
+        for p, op in enumerate(OpAmp, start=M):
+            if op.Vplus and op.Vplus in node_index:
+                C[p, node_index[op.Vplus]] += 1
+            if op.Vminus and op.Vminus in node_index:
+                C[p, node_index[op.Vminus]] -= 1
         
 
-        A = np.vstack((A_top, A_bottom),dtype=complex)
-        # Assemble full right-hand side vector (currents and voltages)
-        b_top = I  # KCL current injections (I is zero here as we have no independent current sources defined)
-        b_bottom = E
-        b = np.concatenate((b_top, b_bottom))
-        # Solve the linear system A x = b for unknown node voltages and source currents
-        solution = np.linalg.lstsq(A, b, rcond=None)[0]
-        num_nodes = len(node_list)
-        # Extract node voltages from solution vector
-        node_voltages = {0: 0.0}
+        # assemble this 
+        A_top    = np.hstack((G, B))
+        A_bottom = np.hstack((C, np.zeros((C.shape[0], B.shape[1]))))
+        A        = np.vstack((A_top, A_bottom))
+        b        = np.hstack((I, E))
+
+        try:
+            x = np.linalg.solve(A, b)
+        except:
+            print(self.frequency)
+                     
+        volt = {0: 0.0}
         for nid, idx in node_index.items():
-            node_voltages[nid] = solution[idx]
-        return node_voltages
+            volt[nid] = x[idx]
+
+        return volt
