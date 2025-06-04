@@ -204,11 +204,12 @@ class Circuit:
 
         try:
             x = np.linalg.solve(A, b)
+
+            volt = {0: 0.0}
+            for nid, idx in node_index.items():
+                volt[nid] = x[idx]
+
+            return volt
         except:
             print(self.frequency)
                      
-        volt = {0: 0.0}
-        for nid, idx in node_index.items():
-            volt[nid] = x[idx]
-
-        return volt

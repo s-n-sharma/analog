@@ -25,6 +25,8 @@ for filename in os.listdir(DIR):
             omega = 2 * np.pi * freq
             circuit.setFrequency(omega)
             V = circuit.solveSystem()
+            if V is None:
+                continue
             Vout = V[circuit.VOUT]
             mag[i] = 20 * np.log10(np.abs(Vout))
             phase[i] = np.angle(Vout, deg=True)

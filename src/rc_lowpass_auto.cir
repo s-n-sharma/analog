@@ -1,0 +1,14 @@
+
+* Automated RC Low Pass Filter
+V1 Vin 0 AC 1 Rser=0 ; AC voltage source, 1V amplitude, 0 series resistance
+R1 Vin Vout 1000
+C1 Vout 0 1e-06
+
+* AC Analysis
+.ac dec 100 1 1000000.0
+
+* Options for batch mode and data saving
+.options meascplx=1 numdgt=7 ; Ensure enough precision and complex data for AC
+.save V(vout) ; Explicitly save the output node voltage
+
+.end

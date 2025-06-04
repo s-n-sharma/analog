@@ -1,49 +1,53 @@
-V1 Vin 0 1
-R1 n9 n4 100k
-IOP12 Vin n2 n5 100
-C1 0 n5 0.5n
-C2 n2 n8 7.5n
-R2 n8 n10 150k
-R3 n4 n5 1000k
-IOP13 n10 n7 n9 100
-R4 n1 n7 2k
-IOP14 n1 n2 n6 100
-R5 Vin n2 0.75k
-R6 n7 n9 20k
-C3 n9 n8 1.5n
-R7 0 n4 250k
-C4 n4 0 2.5n
-C5 n1 n4 2n
-R8 0 n6 375k
-C6 n1 n3 5n
-C7 n9 n8 7.5n
-C8 n8 Vin 75n
-R9 n5 0 1.5k
-R10 n5 Vin 2k
-R11 n5 Vout 250k
-IOP15 n7 n9 n5 100
-C9 n1 n6 500n
-IOP16 n7 n10 n1 100
-R12 n1 n5 375k
-R13 n3 Vin 1000k
-IOP17 n6 n8 n9 100
-IOP18 n3 n5 n1 100
-R14 n10 n9 5k
-R15 Vin n5 500k
-R16 Vin n5 1k
-IOP19 n8 n7 n3 100
-R17 n8 n10 100k
-R18 n7 n2 0.1k
-R19 n5 n6 150k
-C10 n9 n7 15n
-C11 n5 n6 3n
-C12 n6 n7 500n
-R20 Vin n5 500k
-C13 n2 n9 1.5n
-R21 n1 n10 250k
-C14 n9 n1 0.5n
-C15 n7 n6 500n
-C16 n7 n5 50n
-C17 n1 Vin 20n
-C18 n9 n2 20n
-R22 n5 Vout 0.5k
+.VOUT 11
+Vin 0 10 1
+C1 1 8 375n
+C2 6 2 0.5n
+R1 9 5 0.1k
+R2 10 11 1000k
+R3 4 11 30k
+C3 8 9 50n
+C4 8 9 0.75n
+C5 7 4 15n
+R4 4 9 7.5k
+C6 1 4 15n
+C7 10 8 1.5n
+C8 5 11 75n
+C9 7 4 2.5n
+R5 4 11 20k
+R6 10 9 0.5k
+R7 8 2 3k
+C10 1 9 7.5n
+R8 8 4 0.1k
+C11 2 4 1.5n
+C12 6 7 150n
+R9 4 5 0.5k
+R10 10 4 75k
+R11 10 6 0.1k
+C13 7 9 150n
+R12 2 1 375k
+C14 11 8 2n
+R13 7 5 1.5k
+R14 11 9 375k
+C15 3 1 500n
+R15 9 7 150k
+C16 7 10 20n
+R16 6 8 0.5k
+R17 3 8 5k
+C17 2 10 100n
+C18 11 7 3n
+C19 4 11 1n
+R18 9 5 500k
+R19 9 6 1000k
+C20 7 9 10n
+R20 6 7 1k
+R21 5 9 10k
+R22 2 11 2.5k
+R23 9 2 5k
+C21 7 10 0.5n
+R24 3 6 15k
+R25 2 0 500k
+R26 3 0 50k
+R27 1 0 2k
+R28 9 0 10k
+R29 3 0 0.5k
+.ends
