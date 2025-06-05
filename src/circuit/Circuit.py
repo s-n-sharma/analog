@@ -212,4 +212,17 @@ class Circuit:
             return volt
         except:
             print(self.frequency)
-                     
+
+
+class SubCircuit(Circuit):
+    def __init__(self, base_circuit : Circuit):
+        super().__init__(base_circuit)
+        self.inputNode = None
+        self.outputNode = None
+        
+    def setIO_nodes(self, input, output):
+        self.inputNode = input
+        self.outputNode = output
+
+    
+    
