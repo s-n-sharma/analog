@@ -1,16 +1,14 @@
+"""
+Draw the transfer function on graph, press s and then escape (just ignore the save thing that comes up) and then close the window, and 
+close the other windows that come up. It tries to find the circuit by using 
+some example circuits (RC high pass and low pass, sallen-key band pass, band-reject),
+ finding which one to use, and then optimizing parameters to minimize loss. terminates when loss starts to increase
+"""
 import numpy as np
-import matplotlib.pyplot as plt
 import Circuit as circuit
 import math
 import random
 import sys
-
-import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.backend_bases import MouseButton
-
-
-import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backend_bases import MouseButton
 from scipy.interpolate import interp1d
@@ -504,8 +502,9 @@ while (l < 5):
     mags = []
     for index in range(len(circuit_list)):
         #index = np.argmax([np.dot(desired_mag, base[1])/(np.linalg.norm(desired_mag) * np.linalg.norm(base[1])) for base in circuit_list])
-        #index =  np.argmax([compute_loss(desired_mag, base[1]) for base in circuit_list])
-
+        #index =  np.argmax([compute_loss(desired_mag, base[1]) for base in circuit_list]) 
+        #could use these prior lines to guess best circuit, but could also brute force, lwk brute-forcing is kind of useless cuz the guess
+        #is lwk almost always right
         #print(circuit_list[index][-1])
         base_circ = circuit_list[index][0]
         nu = 0.00001
