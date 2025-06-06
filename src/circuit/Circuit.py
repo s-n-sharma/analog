@@ -124,6 +124,7 @@ class Circuit:
             return self.VOUT
     
     def addSubckt(self, subckt, nodeA, nodeB):
+        
   
         if len(subckt.subckt_nodes) != 2:
             raise ValueError("subckt.subckt_nodes must have exactly two IDs")
@@ -135,7 +136,7 @@ class Circuit:
         mapping = {subckt.subckt_nodes[0]: nodeA,
                 subckt.subckt_nodes[1]: nodeB}
 
-        for c in new_comps:
+        """for c in new_comps:
             nlist = ( [c.Vplus, c.Vminus, c.Vout]
                     if isinstance(c, IdealOpAmp)
                     else [c.p, c.n] )
@@ -143,7 +144,7 @@ class Circuit:
                 if nid in (None, 0) or nid in mapping:
                     continue
                 mapping[nid] = self.next_node_id
-                self.next_node_id += 1
+                self.next_node_id += 1"""
 
         for comp in new_comps:
             if isinstance(comp, IdealOpAmp):
