@@ -1,5 +1,6 @@
 import numpy as np
-
+import copy 
+from collections import defaultdict
 class Resistor:
     """Two-terminal resistor component"""
     def __init__(self, resistance):
@@ -31,19 +32,25 @@ class Circuit:
         self.next_node_id = 1  # incremental node ID allocator (0 is reserved for ground)
         self.frequency = 0
         self.VOUT = None
+        self.subckt_nodes = []
+        self.node_to_component = defaultdict(list)
     
     def setFrequency(self, omega):
         self.frequency = omega
 
     def addComponent(self, comp):
         self.components.append(comp)
+    
+    def _register(self, comp, term, node_id):
+        if node_id is None:
+            return                   
+ 
+        self.node_to_component[node_id].append((comp, term))
+
 
     def connectComponents(self, comp1, term1, comp2, term2, isVOUT=False):
-        """Connect a terminal of comp1 to a terminal of comp2 (or to a node/ground)."""
-        # Helper 
         def get_node(comp, term):
             if comp is None or isinstance(comp, (int, float)):
-                # connecting to a node (int) or ground (None/0)
                 return 0 if comp is None else int(comp)
             if isinstance(comp, IdealOpAmp):
                 if term in ('V+', 'Vp', 'v+', 'positive'):
@@ -55,7 +62,6 @@ class Circuit:
                 else:
                     raise ValueError(f"Unknown op amp terminal '{term}'")
             else:
-                # Two-terminal components (Resistor, VoltageSource, etc.)
                 if term in ('p', 'pos', 'positive') or term in (1, '1'):
                     return comp.p
                 elif term in ('n', 'neg', 'negative') or term in (2, '2'):
@@ -63,7 +69,7 @@ class Circuit:
                 else:
                     raise ValueError(f"Unknown component terminal '{term}'")
 
-        # Helper to set a component terminal to a given node ID
+
         def set_node(comp, term, node_id):
             if isinstance(comp, IdealOpAmp):
                 if term in ('V+', 'Vp', 'v+', 'positive'):
@@ -77,48 +83,86 @@ class Circuit:
                     comp.p = node_id
                 elif term in ('n', 'neg', 'negative') or term in (2, '2'):
                     comp.n = node_id
-
-        # Determine node IDs 
         node1 = get_node(comp1, term1)
         node2 = get_node(comp2, term2)
-        # If neither side has a node, assign a new node ID
+
         if node1 is None and node2 is None:
             node_new = self.next_node_id
             self.next_node_id += 1
-            node1 = node_new
-            node2 = node_new
+            node1 = node2 = node_new
         elif node1 is None:
             node1 = node2
         elif node2 is None:
             node2 = node1
-        # else merge
-        elif node1 != node2:
-        
-            replace_id = node2
-            keep_id = node1
+        elif node1 != node2:            
+            replace_id, keep_id = node2, node1
             for comp in self.components:
                 if isinstance(comp, IdealOpAmp):
-                    if comp.Vplus == replace_id: comp.Vplus = keep_id
+                    if comp.Vplus  == replace_id: comp.Vplus  = keep_id
                     if comp.Vminus == replace_id: comp.Vminus = keep_id
-                    if comp.Vout == replace_id: comp.Vout = keep_id
+                    if comp.Vout   == replace_id: comp.Vout   = keep_id
                 else:
                     if comp.p == replace_id: comp.p = keep_id
                     if comp.n == replace_id: comp.n = keep_id
-            node2 = node1 = keep_id
 
-        # Set the determined node IDs on the component terminals
+            if replace_id in self.node_to_component:
+                self.node_to_component[keep_id].update(
+                    self.node_to_component.pop(replace_id)
+                )
+            node1 = node2 = keep_id
+
         if comp1 is not None and not isinstance(comp1, (int, float)):
             set_node(comp1, term1, node1)
+            self._register(comp1, term1, node1)       # NEW
+
         if comp2 is not None and not isinstance(comp2, (int, float)):
             set_node(comp2, term2, node2)
-        
+            self._register(comp2, term2, node2)       # NEW
+
         if isVOUT:
-            if isVOUT == 1:
-                self.VOUT = node1
-                return node1
+            self.VOUT = node1 if isVOUT == 1 else node2
+            return self.VOUT
+    
+    def addSubckt(self, subckt, nodeA, nodeB):
+  
+        if len(subckt.subckt_nodes) != 2:
+            raise ValueError("subckt.subckt_nodes must have exactly two IDs")
+
+        # 1) deep‑copy to keep the original pristine
+        new_comps = [copy.deepcopy(c) for c in subckt.components]
+
+        # 2) build mapping  (interface pins first)
+        mapping = {subckt.subckt_nodes[0]: nodeA,
+                subckt.subckt_nodes[1]: nodeB}
+
+        for c in new_comps:
+            nlist = ( [c.Vplus, c.Vminus, c.Vout]
+                    if isinstance(c, IdealOpAmp)
+                    else [c.p, c.n] )
+            for nid in nlist:
+                if nid in (None, 0) or nid in mapping:
+                    continue
+                mapping[nid] = self.next_node_id
+                self.next_node_id += 1
+
+        for comp in new_comps:
+            if isinstance(comp, IdealOpAmp):
+                comp.Vplus  = mapping.get(comp.Vplus,  comp.Vplus)
+                comp.Vminus = mapping.get(comp.Vminus, comp.Vminus)
+                comp.Vout   = mapping.get(comp.Vout,   comp.Vout)
+                self._register(comp, 'V+',   comp.Vplus)
+                self._register(comp, 'V-',   comp.Vminus)
+                self._register(comp, 'vout', comp.Vout)
             else:
-                self.VOUT = node2
-                return node2
+                comp.p = mapping.get(comp.p, comp.p)
+                comp.n = mapping.get(comp.n, comp.n)
+                self._register(comp, 'p', comp.p)
+                self._register(comp, 'n', comp.n)
+
+        self.components.extend(new_comps)
+        
+        
+        
     def solveSystem(self):
         """This solves MNA with op amps, literally copied from https://lpsa.swarthmore.edu/Systems/Electrical/mna/MNA5.html"""
         
@@ -215,8 +259,8 @@ class Circuit:
 
 
 class SubCircuit(Circuit):
-    def __init__(self, base_circuit : Circuit):
-        super().__init__(base_circuit)
+    def __init__(self):
+        super().__init__()
         self.inputNode = None
         self.outputNode = None
         

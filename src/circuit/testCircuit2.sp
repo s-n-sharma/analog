@@ -1,4 +1,5 @@
 Vin 0 1 5
 X 1 2 RC
-IOP 2 3 3
-.end 
+X 2 3 RC2
+VOUT 3
+.end
