@@ -1,0 +1,4 @@
+Vin 0 1 5
+X 1 2 NESTED
+VOUT 2
+.end 

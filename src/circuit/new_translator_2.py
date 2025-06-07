@@ -1,4 +1,3 @@
-
 import re, copy, pathlib
 from Circuit import (Circuit,
                      Resistor, Capacitor, VoltageSource, IdealOpAmp)
@@ -36,7 +35,7 @@ def _logical_lines(fileobj):
 # ────────────────────────────────── Translator ──────────────────────────────────
 class Translator:
 
-    def __init__(self, netlist_path: str, nodeID=0,parentPins=None, subckt_path="./.subckts"):
+    def __init__(self, netlist_path: str, nodeID=0, parentPins=None, subckt_path="./.subckts", parent_node_id=None):
         self.subckt_path   = pathlib.Path(subckt_path)
         self.circuit       = Circuit()
         self.token2node    = {'0': nodeID}
@@ -45,23 +44,27 @@ class Translator:
         self.numsubckts = 0
         self.subckt_ports = []
         self.parentPins = parentPins
-        self.VOUT          = None
+        self.VOUT = None
+        self.parent_node_id = parent_node_id  # Track parent node ID for hierarchical numbering
 
         self._parse_file(netlist_path)
 
         if self.VOUT is not None:
             self.circuit.VOUT = self.VOUT
 
-    
     def _gid(self, tok: str) -> int:     
         if tok == "0":
             return 0  
         
         if tok not in self.token2node:
-            self.token2node[tok] = self.next_node_id
+            # For subcircuits, use parent node ID as base for hierarchical numbering
+            if self.parent_node_id is not None:
+                new_id = self.parent_node_id * 1000 + self.next_node_id
+            else:
+                new_id = self.next_node_id
+            self.token2node[tok] = new_id
             self.next_node_id += 1
         return self.token2node[tok]
-
 
     def _parse_file(self, path: str):       
         for ln in _logical_lines(open(path)):
@@ -80,7 +83,6 @@ class Translator:
                 continue
             cmd  = tok[0].upper()
 
-    
             if cmd == '.END':
                 return
 
@@ -107,19 +109,20 @@ class Translator:
                 if not sub_path.exists():
                     raise FileNotFoundError(f"Cannot find sub‑ckt file '{sub_path}'")
 
-                sub_trans = Translator(str(sub_path), subckt_path=self.subckt_path, nodeID=self.nodeID - 100 * (self.numsubckts + 1), parentPins =pins_gid )
+                # Pass the current node ID as parent_node_id for hierarchical numbering
+                sub_trans = Translator(str(sub_path), 
+                                    subckt_path=self.subckt_path, 
+                                    nodeID=self.nodeID,
+                                    parentPins=pins_gid,
+                                    parent_node_id=self.next_node_id - 1)
                 self.numsubckts += 1
-                subckt    = sub_trans.circuit
+                subckt = sub_trans.circuit
 
                 if len(pins_gid) != 2:
                     raise ValueError("Exactly two interface pins are expected for a sub‑circuit")
 
                 self.circuit.addSubckt(subckt, pins_gid[0], pins_gid[1])
                 continue
-
-                
-
-                    
 
     def _add_primitive(self, tok: list[str]):
         kind = tok[0][0].upper()
