@@ -1,161 +1,216 @@
-import numpy as np
-import Circuit as circ
-import re
-from collections import namedtuple
-from itertools import chain
+import re, copy, pathlib
+from Circuit import (Circuit,
+                     Resistor, Capacitor, VoltageSource, IdealOpAmp)
 
-_METRIC = {'':1, 'f':1e-15, 'p':1e-12, 'n':1e-9, 'u':1e-6,
-           'm':1e-3, 'k':1e3, 'meg':1e6, 'g':1e9}
+_METRIC = {'':1, 'f':1e-15, 'p':1e-12, 'n':1e-9,
+           'u':1e-6, 'm':1e-3, 'k':1e3, 'meg':1e6, 'g':1e9}
 
-DEVICE_FACTORY = {
-    'R': lambda name, val: circ.Resistor(num(val)),
-    'C': lambda name, val,**k: circ.Capacitor(num(val)),
-    'V': lambda name, val: circ.VoltageSource(num(val)),  
-    'IOP': lambda name, val: circ.IdealOpAmp(),      # subckt instance (handled later)
-}
-def num(s: str) -> float:
-    m = re.fullmatch(r'([-+]?[\d.]+(?:[eE][-+]?\d+)?)([a-zA-Z]*)', s)
+def _to_number(tok: str) -> float:
+    m = re.fullmatch(r'([-+]?[\d.]+(?:[eE][-+]?\d+)?)([a-z]*)', tok)
     if not m:
-        raise ValueError(f"Bad numeric token {s}")
+        raise ValueError(f"Bad numeric token {tok}")
     base, suff = m.groups()
     return float(base) * _METRIC[suff.lower()]
 
-def cleaned_lines(fileobj):
-    """Yield logical lines with continuations merged,
-       comments/blank lines stripped."""
+def _logical_lines(fileobj):
+    """
+    1. Strip comments (everything after '*')
+    2. Merge continuation lines that start with '+'
+    """
     buf = ''
     for raw in fileobj:
-        # Remove text after unescaped '*'  (LTspice style)
         line = raw.split('*', 1)[0].rstrip()
         if not line:
             continue
-
         if line.startswith('+'):
             buf += ' ' + line[1:].lstrip()
             continue
-
         if buf:
             yield buf
         buf = line
     if buf:
         yield buf
-def parse_netlist(path: str):
-    """
-    Read a (very small‑signal) SPICE‑style net‑list and return
-    {component‑object: [node‑names]} ready for `build_circuit`.
 
-    Conventions handled
-    -------------------
-    • Two‑terminal devices   :  line    'R1  n‑  n+  value'
-                                stored  ['n+', 'n‑']
-    • IOP op‑amp instance    :  line    'IOP U1  n+  n‑  nout'
-                                stored  ['nout', 'n+', 'n‑']
-    • .subckt / .ends blocks :  parsed but *ignored* (black‑box macro)
-    """
-    comps = {}
-    vout_alias  = None
-    with open(path) as f:
-        inside_subckt = False
-        for line in cleaned_lines(f):
-            tok = line.split()
+class Translator:
+
+    def __init__(self, netlist_path: str, nodeID=0, parentPins=None, subckt_path="./.subckts", function_path="./.functions", parent_node_id=None, param_map=None):
+        self.subckt_path   = pathlib.Path(subckt_path)
+        self.function_path = pathlib.Path(function_path)
+        self.circuit       = Circuit()
+        self.token2node    = {'0': nodeID}
+        self.next_node_id  = nodeID + 1
+        self.nodeID = nodeID
+        self.numsubckts = 0
+        self.subckt_ports = []
+        self.parentPins = parentPins
+        self.VOUT = None
+        self.parent_node_id = parent_node_id  # Track parent node ID for hierarchical numbering
+        self.param_map = param_map or {}  # Parameter mapping for function calls
+
+        self._parse_file(netlist_path)
+
+        if self.VOUT is not None:
+            self.circuit.VOUT = self.VOUT
+
+    def _gid(self, tok: str) -> int:     
+        if tok == "0":
+            return 0  
+        
+        if tok not in self.token2node:
+            # For subcircuits, use parent node ID as base for hierarchical numbering
+            if self.parent_node_id is not None:
+                new_id = self.parent_node_id * 1000 + self.next_node_id
+            else:
+                new_id = self.next_node_id
+            self.token2node[tok] = new_id
+            self.next_node_id += 1
+        return self.token2node[tok]
+
+    def _parse_file(self, path: str):       
+        for ln in _logical_lines(open(path)):
+            tok  = ln.split()
             if not tok:
                 continue
-
-            # ─── Skip / leave sub‑ckt definitions ────────────────────
-            hd = tok[0].lower()
-
-            # ── skip labels but *keep* the body ──────────────────────
-            if hd == '.subckt':              # header: ignore, then parse body
+            cmd  = tok[0].upper()
+            if cmd == '.DECLARE_SUBCKT':
+                if len(tok) != 3:
+                    raise ValueError(".declare_subckt line must be:  .declare_subckt <in> <out>")
+                self.circuit.subckt_nodes = tok[1:]
+                self.subckt_ports = tok[1:]
+            elif cmd == '.FN':
+                if len(tok) < 4:
+                    raise ValueError(".fn line must be:  .fn <node1> <node2> <circuit_file> [param=val ...]")
+                self._handle_function_call(tok[1:])
                 continue
-            if hd in ('.ends', '.end'):      # footer: ignore
+
+        for ln in _logical_lines(open(path)):
+            tok  = ln.split()
+            if not tok:
+                continue
+            cmd  = tok[0].upper()
+
+            if cmd == '.END':
+                return
+
+            if cmd == 'VOUT':
+                if len(tok) != 2:
+                    raise ValueError("VOUT line must be:  VOUT <node>")
+                self.VOUT = self._gid(tok[1])
                 continue
 
-
-            name = tok[0]
-            hd   = name.upper()
-
-            # ─── IOP op‑amp instance (no value token) ────────────────
-            if hd.startswith('IOP'):
-                nodes = tok[1:]                       # V+  V‑  Vout
-                if len(nodes) != 3:
-                    raise ValueError("IOP needs exactly 3 nodes")
-                nodes = [nodes[2], nodes[0], nodes[1]]  # → [Vout, V+, V‑]
-                comp  = DEVICE_FACTORY['IOP'](name, None)
-                comps[comp] = nodes
+            first_char = tok[0][0].upper()
+            if first_char in {'R', 'C', 'V'} or cmd == 'IOP':
+                self._add_primitive(tok)
                 continue
+            if cmd == '.DECLARE_SUBCKT':
+                if len(tok) != 3:
+                    raise ValueError(".declare_subckt line must be:  .declare_subckt <in> <out>")
+                self.circuit.subckt_nodes = [int(self.token2node[tok[1]]), int(self.token2node[tok[2]])]
+                continue
+            if first_char == 'X':
+                *pins_str, sub_name = tok[1:]
+                pins_gid           = [self._gid(p) for p in pins_str]
+
+                sub_path = self.subckt_path / f"{sub_name}.sp"
+                if not sub_path.exists():
+                    raise FileNotFoundError(f"Cannot find sub‑ckt file '{sub_path}'")
+
+                # Pass the current node ID as parent_node_id for hierarchical numbering
+                sub_trans = Translator(str(sub_path), 
+                                    subckt_path=self.subckt_path, 
+                                    nodeID=self.nodeID,
+                                    parentPins=pins_gid,
+                                    parent_node_id=self.next_node_id - 1)
+                self.numsubckts += 1
+                subckt = sub_trans.circuit
+
+                if len(pins_gid) != 2:
+                    raise ValueError("Exactly two interface pins are expected for a sub‑circuit")
+
+                self.circuit.addSubckt(subckt, pins_gid[0], pins_gid[1])
+                continue
+
+    def _handle_function_call(self, tokens):
+        """Handle a function call in the netlist."""
+        node1, node2, circuit_file = tokens[0:3]
+        params = tokens[3:]  # Remaining tokens are parameters
+        
+        # Get node IDs
+        n1, n2 = self._gid(node1), self._gid(node2)
+        
+        circuit_path = self.function_path / f"{circuit_file}.sp"
+        if not circuit_path.exists():
+            raise FileNotFoundError(f"Cannot find circuit file '{circuit_path}'")
             
-            if hd in ('VOUT', '.VOUT') and len(tok) >= 2:
-                vout_alias = tok[1]
-                continue            # nothing more on this line
-            # ─── Two‑terminal devices  R / C / V … ───────────────────
-            nodes = tok[1:-1]     # [neg, pos] in your convention
-            if len(nodes) != 2:
-                raise ValueError(f"{name}: need exactly two nodes")
-            nodes = [nodes[1], nodes[0]]              # → [pos, neg]
-            value = tok[-1]
-
-            key = name[0].upper()                     # first letter
-            if key not in DEVICE_FACTORY:
-                raise ValueError(f"Unknown device type {name}")
-            comp = DEVICE_FACTORY[key](name, value)
-            comps[comp] = nodes
-    if vout_alias is not None:
-        for nodes in comps.values():
-            for i, n in enumerate(nodes):
-                if n == vout_alias:
-                    nodes[i] = 'VOUT'
-    return comps
-def build_circuit(components):
-    circuit = circ.Circuit()
-    pin_out = {}
-
-    for comp, nodes in components.items():
-        circuit.addComponent(comp)
-        if isinstance(comp, circ.IdealOpAmp):          
-            vout, vp, vn = nodes
-            pin_out.setdefault(vout, []).append(('vout', comp))
-            pin_out.setdefault(vp,   []).append(('v+',   comp))
-            pin_out.setdefault(vn,   []).append(('v-',   comp))
-        else:                                       
-            p, n = nodes
-            pin_out.setdefault(p, []).append(('p', comp))
-            pin_out.setdefault(n, []).append(('n', comp))
-
-
-    for node, conns in pin_out.items():
-        base_pin = conns[0]
-        for other in conns[1:]:
-            if node.upper() == "VOUT":                
-                circuit.connectComponents(base_pin[1], base_pin[0],
-                                            other[1],  other[0], isVOUT=1)
-            circuit.connectComponents(base_pin[1], base_pin[0],
-                                        other[1],  other[0])
+        param_map = {}
+        for param in params:
+            if '=' not in param:
+                raise ValueError(f"Parameter must be in format 'name=value': {param}")
+            name, value = param.split('=', 1)
+            param_map[name] = value
             
-    if circuit.VOUT is None and 'VOUT' in pin_out:
-        pin, comp = pin_out['VOUT'][0]             # single (pin‑name, obj)
+        func_trans = Translator(str(circuit_path),
+                              nodeID=self.next_node_id,
+                              parentPins=[n1, n2],
+                              subckt_path=self.subckt_path,
+                              parent_node_id=self.next_node_id - 1,
+                              param_map=param_map)
+                              
+        # Add all components from the function to the main circuit
+        for comp in func_trans.circuit.components:
+            self.circuit.addComponent(comp)
+            
+        # Update node numbering
+        self.next_node_id = func_trans.next_node_id
+        self.token2node.update(func_trans.token2node)
 
-        # find/create a node number
-        node_id = None
-        if isinstance(comp, circ.IdealOpAmp):
-            node_id = {'vout':  'Vout',
-                       'v+':    'Vplus',
-                       'v-':    'Vminus'}[pin]
-            node_id = getattr(comp, node_id)       # may still be None
+    def _add_primitive(self, tok: list[str]):
+        kind = tok[0][0].upper()
+
+        # Map interface nodes
+        n1, n2 = tok[1], tok[2]
+        if n1 == 'in':
+            n1 = self.parentPins[0] if self.parentPins else self._gid(n1)
+        elif n1 == 'out':
+            n1 = self.parentPins[1] if self.parentPins else self._gid(n1)
         else:
-            node_id = getattr(comp, 'p' if pin == 'p' else 'n')
-
-        if node_id is None:                        # not stamped yet
-            node_id = circuit.next_node_id
-            circuit.next_node_id += 1
-            # write it back to the component
-            if isinstance(comp, circ.IdealOpAmp):
-                setattr(comp, {'vout':'Vout','v+':'Vplus','v-':'Vminus'}[pin],
-                        node_id)
+            n1 = self._gid(n1)
+            
+        if n2 == 'in':
+            n2 = self.parentPins[0] if self.parentPins else self._gid(n2)
+        elif n2 == 'out':
+            n2 = self.parentPins[1] if self.parentPins else self._gid(n2)
+        else:
+            n2 = self._gid(n2)
+    
+        if kind == 'R':
+            value = tok[3]
+            if value in self.param_map:
+                value = self.param_map[value]
+            comp = Resistor(_to_number(value))
+            comp.n, comp.p = n1, n2
+        elif kind == 'C':
+            value = tok[3]
+            if value in self.param_map:
+                value = self.param_map[value]
+            comp = Capacitor(_to_number(value))
+            comp.n, comp.p = n1, n2
+        elif kind == 'V':
+            value = tok[3]
+            if value in self.param_map:
+                value = self.param_map[value]
+            comp = VoltageSource(_to_number(value))
+            comp.n, comp.p = n1, n2
+        elif tok[0].upper() == 'IOP':
+            comp = IdealOpAmp()
+            comp.Vplus, comp.Vminus, comp.Vout = n1, n2, self._gid(tok[3])
+            if tok[3] == 'out':
+                comp.Vout = self.parentPins[1] if self.parentPins else self._gid(tok[3])
+            elif tok[3] == 'in':
+                comp.Vout = self.parentPins[0] if self.parentPins else self._gid(tok[3])
             else:
-                if pin == 'p': comp.p = node_id
-                else:          comp.n = node_id
+                comp.Vout = self._gid(tok[3])
+        else:                                    
+            raise ValueError(f"Unhandled primitive line: {' '.join(tok)}")
 
-        circuit.VOUT = node_id                     # finally expose it
-
-    return circuit
-
+        self.circuit.addComponent(comp)

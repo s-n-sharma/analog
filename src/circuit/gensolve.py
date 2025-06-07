@@ -1,5 +1,5 @@
 from scipy.cluster.hierarchy import DisjointSet as djs
-import translator 
+import translator
 import Circuit as circ
 from pathlib import Path
 import matplotlib.pyplot as plt

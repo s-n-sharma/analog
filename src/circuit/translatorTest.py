@@ -1,4 +1,4 @@
-import translator 
+import translator
 import Circuit as circ
 import numpy as np
 from pathlib import Path
