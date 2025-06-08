@@ -257,6 +257,7 @@ class Circuit:
             return volt
         except:
             print(self.frequency)
+            return "failed"
 
 
 class SubCircuit(Circuit):

@@ -1,0 +1,12 @@
+*.subckt iop1 1 2 3
+*.VOUT 3
+*Vin  0 1 5
+*R1   0 2 1k
+*R2   2 3 5k
+*.ends
+VOUT 2
+Vin 0 1 1
+R1 1 2 5k
+R2 2 0 5k
+C1 2 0 10n
+.end

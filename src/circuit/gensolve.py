@@ -8,36 +8,47 @@ import os
 
 
 DIR = "example_circuits"
+f = np.logspace(1, 6, 400)
+
 
 for filename in os.listdir(DIR):
-    try:
-        if not os.path.isfile(os.path.join(DIR, filename)):
-            continue
-        file = os.path.join(DIR, filename)
-        components = translator.parse_netlist(file)
-        circuit = translator.build_circuit(components)
+    if not os.path.isfile(os.path.join(DIR, filename)):
+        continue
+    file = os.path.join(DIR, filename)
+    trans = translator.Translator(file)
+    circuit = trans.circuit
 
-        f = np.logspace(1, 10, 400)
-        mag = np.zeros_like(f, dtype=float)
-        phase = np.zeros_like(f, dtype=float)
+    mag = np.zeros_like(f, dtype=float)
+    phase = np.zeros_like(f, dtype=float)
+
+    failed_flag = False
+
+    try:
 
         for i, freq in enumerate(f):
             omega = 2 * np.pi * freq
             circuit.setFrequency(omega)
             V = circuit.solveSystem()
-            if V is None:
-                continue
+            if V is None or V == "failed":
+                failed_flag = True
+                break
             Vout = V[circuit.VOUT]
             mag[i] = 20 * np.log10(np.abs(Vout))
             phase[i] = np.angle(Vout, deg=True)
-        
-        for i in range(len(mag)):
-            with open("ex_circ_mag/"+filename, 'a') as out:
-                out.write(f'{f[i]} {mag[i]}\n')
-            with open("ex_circ_phase/"+filename, 'a') as out:
-                out.write(f'{f[i]} {mag[i]}\n')
+   
     except Exception as e:
-        print(str(e))
+        #print(str(e))
+        continue
+
+    if failed_flag:
+        continue
+    
+    for i in range(len(mag)):
+        with open("ex_circ_mag/"+filename, 'a') as out:
+            out.write(f'{f[i]} {mag[i]}\n')
+        with open("ex_circ_phase/"+filename, 'a') as out:
+            out.write(f'{f[i]} {phase[i]}\n')
+
 
 
 

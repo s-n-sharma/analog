@@ -18,7 +18,7 @@ def min_deg_func(dic, zero_flag = False):
             return False
     return True
 
-MAX_NODES = 2
+MAX_NODES = 5
 
 counter = 0
 
@@ -36,40 +36,43 @@ for i in range(2, MAX_NODES):
             Capacitor_count = 0
             op_amp_count = 0
 
-            OP_AMP_NUMBER = random.randint(0, int(max(0.2*EDGE_NUMBER, 1)))
 
-            """
+            if _ < 8:
 
-            for op_amp_cnt in range(OP_AMP_NUMBER):
-                node_1 = random.randint(0, i+2)
-                node_2 = random.randint(0, i+2)
+                OP_AMP_NUMBER = random.randint(0, int(max(0.2*EDGE_NUMBER, 1)))
+
                 
-                while (node_1 == node_2):
+
+                for op_amp_cnt in range(OP_AMP_NUMBER):
+                    node_1 = random.randint(0, i+2)
                     node_2 = random.randint(0, i+2)
-                
-                node_3 = random.randint(0, i+2)
-
-                while (node_1 == node_3) or (node_2 == node_3):
+                    
+                    while (node_1 == node_2):
+                        node_2 = random.randint(0, i+2)
+                    
                     node_3 = random.randint(0, i+2)
+
+                    while (node_1 == node_3) or (node_2 == node_3) and (node_2, node_3) not in out_pos:
+                        node_3 = random.randint(0, i+2)
+                    
+                    #djs_conn.merge(node_1, node_2)
+                    #djs_conn.merge(node_2, node_3)
+                    #djs_conn.merge(node_1, node_3) #not really needed lol
+
+                    deg_count[node_1] += 1
+                    deg_count[node_2] += 1
+                    deg_count[node_3] += 1
+
+                    out_pos.add((node_2, node_3))
                 
-                djs_conn.merge(node_1, node_2)
-                djs_conn.merge(node_2, node_3)
-                djs_conn.merge(node_1, node_3) #not really needed lol
-
-                deg_count[node_1] += 1
-                deg_count[node_2] += 1
-                deg_count[node_3] += 1
-
-                out_pos.add((node_2, node_3))
+                    #.subckt iop1 1 2 3
+                    f.write(f"IOP {node_1} {node_2} {node_3}\n")
             
-                #.subckt iop1 1 2 3
-                f.write(f".subckt iop{op_amp_cnt+1} {node_1} {node_2} {node_3}\n")
-            
-            """
+
             
             #0 is ground, i+1 is Vin, i+2 is Vout
 
-            f.write(f".VOUT {i+2}\n")
+            f.write(f"VOUT {i+2}\n")
             f.write(f"Vin 0 {i+1} 1\n")
 
             j = 0
@@ -126,5 +129,5 @@ for i in range(2, MAX_NODES):
                 comp_strength = 10
                 f.write(f"{component} {other_node} 0 {str(comp_strength)+unit}\n")
 
-            f.write(".ends")    
+            f.write(".end")    
             counter += 1
