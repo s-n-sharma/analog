@@ -1,5 +1,5 @@
 import re, copy, pathlib
-from Circuit import (Circuit,
+from src.circuit.Circuit import (Circuit,
                      Resistor, Capacitor, VoltageSource, IdealOpAmp)
 
 _METRIC = {'':1, 'f':1e-15, 'p':1e-12, 'n':1e-9,
@@ -10,7 +10,7 @@ def _to_number(tok: str) -> float:
     if not m:
         raise ValueError(f"Bad numeric token {tok}")
     base, suff = m.groups()
-    return float(base) * _METRIC[suff.lower()]
+    return float(base) *  _METRIC[suff.lower()]
 
 def _logical_lines(fileobj):
     """
