@@ -18,12 +18,12 @@ def min_deg_func(dic, zero_flag = False):
             return False
     return True
 
-MAX_NODES = 5
+MAX_NODES = 50
 
 counter = 0
 
-for i in range(2, MAX_NODES):
-    for _ in range(15):
+for i in range(1, MAX_NODES):
+    for _ in range(30):
         with open(f'example_circuits/graph_{counter}.txt', 'w') as f:
 
             djs_conn_2 = djs([j for j in range(1, i+3)]) #want to exclude connections through ground

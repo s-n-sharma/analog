@@ -4,6 +4,7 @@ import Circuit as circ
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
+np.seterr(all="raise")
 import os
 
 

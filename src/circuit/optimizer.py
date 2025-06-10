@@ -1,11 +1,6 @@
-"""
-Draw the transfer function on graph, press s and then escape (just ignore the save thing that comes up) and then close the window, and 
-close the other windows that come up. It tries to find the circuit by using 
-some example circuits (RC high pass and low pass, sallen-key band pass, band-reject),
- finding which one to use, and then optimizing parameters to minimize loss. terminates when loss starts to increase
-"""
 import numpy as np
 np.seterr(all="raise")
+"""ts fucking sucks"""
 import Circuit as circuit
 import math
 import random
@@ -240,163 +235,195 @@ class InteractiveLogDraw:
 
         self.sampled_data = list(zip(self.x_sample_points, sampled_y_values_clipped))
 
+class circ_optimizer:
+    def compute_randomness(self, arr, size):
+        try:
+            ret = []
+            for i in range(int(len(arr)/size)):
+                avg = sum(arr[5*i:5*(i+1)])/size
+                ret.extend([arr[5*i] - avg, arr[5*i + 1] - avg, arr[5*i + 2] - avg, arr[5*i + 3] - avg, arr[5*i + 4] - avg])
+            return np.dot(ret, ret)/np.dot(arr, arr)
+        except:
+            return None
+    
+    def compute_bode(circ, f, mag, phase):
+        for i, freq in enumerate(f):
+            omega = 2 * np.pi * freq
+            circ.setFrequency(omega)
+            V = circ.solveSystem()
+            Vout = V[circ.VOUT]
+            mag[i] = 20 * np.log10(np.abs(Vout))
+            phase[i] = np.angle(Vout, deg=True)
+        return mag
 
-f = np.logspace(1, 6, 400)           
+    def compute_loss(a, b):
+        return np.dot(a-b, a-b)
 
-interactive_drawer = InteractiveLogDraw(f)
-#print(len(interactive_drawer.yvals))
+    def __init__(self, f, DIR, k, eta, nu, MCF):
 
-mag = interactive_drawer.yvals
+        self.all_circ = []
+        self.file_dic = {}
+        self.mag_dic = {}
+        self.DIR = DIR
+        self.f = f
+        self.k = k
+        self.eta = eta
+        self.nu = nu
+        self.MCF = MCF
 
-def compute_randomness(arr, size):
-    ret = []
-    for i in range(int(len(arr)/size)):
-        avg = sum(arr[5*i:5*(i+1)])/size
-        ret.extend([arr[5*i] - avg, arr[5*i + 1] - avg, arr[5*i + 2] - avg, arr[5*i + 3] - avg, arr[5*i + 4] - avg])
-    return np.dot(ret, ret)/np.dot(arr, arr)
+        for filename in os.listdir(DIR):
+            if not os.path.isfile(os.path.join(DIR, filename)):
+                continue
+            file = os.path.join(DIR, filename)
+            data = []
+            hash_data = []
+            with open (file, 'r') as f:
+                lines = f.readlines()
+                for line in lines:
+                    temp = float(line.split()[-1].split('\\')[0])
+                    data.append(float(line.split()[-1].split('\\')[0]))
+                    hash_data.append(float(line.split()[-1].split('\\')[0]))
+                    if np.isnan(temp) or math.isinf(temp):
+                        continue
+                    
+            data = np.array(data)
+
+            if self.compute_randomness(data, 5) and not self.compute_randomness(data, 5) > 0.03 and not any(np.isnan(data)):
+                self.all_circ.append(data)
+                self.file_dic[str(hash_data)] = filename
+                self.file_dic[str(data)] = filename
+                self.mag_dic[filename] = hash_data
+            
+            self.example_circs = []
+            self.example_circs_mags = []
+
+            """
+            
+            self.all_circ = np.array(self.all_circ)
+
+            self.standardized_data = (self.all_circ - self.all_circ.mean(axis = 0)) / self.all_circ.std(axis = 0)
+            self.covariance_matrix = np.cov(self.standardized_data, ddof = 1, rowvar = False)
+            self.eigenvalues, self.eigenvectors = np.linalg.eig(self.covariance_matrix)
+            self.order_of_importance = np.argsort(self.eigenvalues)[::-1]
+            self.sorted_eigenvalues = self.eigenvalues[self.order_of_importance]
+            self.sorted_eigenvectors = self.eigenvectors[:,self.order_of_importance]
+
+            
+
+            for i in range(k):
+                eigen_vec = self.sorted_eigenvectors[i] + self.all_circ.mean(axis=0) * np.ones(len(self.sorted_eigenvectors[i]))
+                index = np.argmax([np.dot(self.all_circ[j], eigen_vec)/(np.dot(self.all_circ[j], self.all_circ[j]) * np.dot(eigen_vec, eigen_vec)) for j in range(len(self.all_circ))])
+                self.example_circs.append(self.file_dic[str(self.all_circ[index])])
+                self.example_circs_mags.append(self.all_circ[index])
+            
+            """
+
+            for i in range(len(self.all_circ)):
+                self.example_circs.append(self.file_dic[str(self.all_circ[i])])
+                self.example_circs_mags.append(self.all_circ[i])
+
+    
+    def getCircuit(self, mag, order):
+
+        print('Staring Optimization...')
+
+        desired_mag = np.copy(mag)
+        total_mag = np.zeros_like(f, dtype=float)
+        initial_loss = sys.maxsize * 2 + 1
+        ret = []
+
+        for l in range(order):
+
+            print(f"Order {i}:")
+
+            mags = []
+
+            index = np.argmax([np.dot(desired_mag, self.example_circs_mags[k])/(np.linalg.norm(desired_mag) * np.linalg.norm(self.example_circs_mags[k]))] for k in range(len(example_circs_mags)))
+            
+            base_circ_file = self.example_circs[index]
+            base_circ_trans = translator.Translator('example_circuits/'+base_circ_file)
+            base_circ = base_circ_trans.circuit
+
+            mag_p = self.example_circs_mags[index]
+            phase_p = mag_p
+
+            for k in range(100):
+                changes = []
+                original_L = self.compute_loss(self.compute_bode(base_circ, f, mag_p, phase_p), desired_mag)
+                for comp in base_circ.components:
+                    if isinstance(comp, circuit.Resistor) or isinstance(comp, circuit.Capacitor):
+                        original_val = comp.value
+                        epsilon = max(self.nu * original_val, 0.000000000001)
+                        comp.value += epsilon
+                        perturbed_L =  self.compute_loss(self.compute_bode(base_circ, f, mag_p, phase_p), desired_mag)
+                        dLdX = (perturbed_L - original_L)/epsilon
+                        change = -1 * self.eta * dLdX
+                        comp.value = original_val
+                        if abs(change) > abs(self.MCF * comp.value):
+                            change = math.copysign(self.MCF * comp.value, change)
+                        changes.append(change)
+                    else:
+                        changes.append('N/A')
+
+                for i in range(len(base_circ.components)):
+                    if not changes[i] == 'N/A':
+                        base_circ.components[i].value = max(1e-10, base_circ.components[i].value + changes[i])
+                
+                if (k % 50 == 0):
+                    mag_p = self.compute_bode(base_circ, f, mag_p, phase_p)
+                    print(f"Optimizing Round {k}: {self.compute_loss(mag_p, desired_mag)}")
+
+            mag_p = self.compute_bode(base_circ, f, mag_p, phase_p)
+            loss_p = self.compute_loss(desired_mag, mag_p)
+            mags.append(mag_p)
+            
+            if loss_p > initial_loss:
+                break 
+
+            initial_loss = loss_p
+
+            desired_mag -= mag_p
+            total_mag += mag_p
+
+            ret.append(base_circ)
+
+            print('\n----------------------------------------------------\n')
+
+        
+        print('\nOptimization Complete\n')
+        plt.figure()
+        plt.semilogx(f, mag)
+        plt.semilogx(f, total_mag)
+        plt.semilogx(f, mag - total_mag)
+        plt.xlabel("Frequency (Hz)")
+        plt.ylabel("Magnitude (dB)")
+        plt.title("Sallen‑Key Low‑Pass Filter – Magnitude Response")
+        plt.grid(True, which='both')
+        plt.show()
+
+        return ret
+        
+
+
+
+
 
 DIR = 'ex_circ_mag'
 
-count = 0
-all_circ = []
-file_dic = {}
-mag_dic = {}
+k = 250
 
-for filename in os.listdir(DIR):
-    if not os.path.isfile(os.path.join(DIR, filename)):
-        continue
-    file = os.path.join(DIR, filename)
-    data = []
-    hash_data = []
-    with open (file, 'r') as f:
-        lines = f.readlines()
-        for line in lines:
-            asdf = float(line.split()[-1].split('\\')[0])
-            data.append(float(line.split()[-1].split('\\')[0]))
-            hash_data.append(float(line.split()[-1].split('\\')[0]))
-            if np.isnan(asdf) or math.isinf(asdf):
-                continue
-            
-    data = np.array(data)
-    if not compute_randomness(data, 5) > 0.03 and not any(np.isnan(data)):
-        count += 1
-        all_circ.append(data)
-        file_dic[str(hash_data)] = filename
-        file_dic[str(data)] = filename
-        mag_dic[filename] = hash_data
+f = np.logspace(1, 6, 400) 
+nu = 0.00001
+eta = 0.00001
+max_change_factor = 0.1  
 
-#print(len(all_circ), len(all_circ[0]))
-
-all_circ = np.array(all_circ)
-
-k = 25
-
-f = np.logspace(1, 6, 400)           
+opt = circ_optimizer(f, DIR, k, eta, nu, max_change_factor)
 
 
-all_circ = np.array(all_circ)
+interactive_drawer = InteractiveLogDraw(f)
+mag = interactive_drawer.yvals
 
-standardized_data = (all_circ - all_circ.mean(axis = 0)) / all_circ.std(axis = 0)
-covariance_matrix = np.cov(standardized_data, ddof = 1, rowvar = False)
-eigenvalues, eigenvectors = np.linalg.eig(covariance_matrix)
-order_of_importance = np.argsort(eigenvalues)[::-1]
-sorted_eigenvalues = eigenvalues[order_of_importance]
-sorted_eigenvectors = eigenvectors[:,order_of_importance]
-#reduced_data = np.transpose(np.matmul(standardized_data, sorted_eigenvectors[:,:k]))
+ret = opt.getCircuit(mag, 7)
 
-example_circs = []
-example_circs_mags = []
-
-for i in range(k):
-    eigen_vec = sorted_eigenvectors[i] + all_circ.mean(axis=0) * np.ones(len(sorted_eigenvectors[i]))
-    index = np.argmax([np.dot(all_circ[j], eigen_vec)/(np.dot(all_circ[j], all_circ[j]) * np.dot(eigen_vec, eigen_vec)) for j in range(len(all_circ))])
-    example_circs.append(file_dic[str(all_circ[index])])
-    example_circs_mags.append(all_circ[index])
-
-
-def compute_bode(circ, f, mag, phase):
-    for i, freq in enumerate(f):
-        omega = 2 * np.pi * freq
-        circ.setFrequency(omega)
-        V = circ.solveSystem()
-        Vout = V[circ.VOUT]
-        mag[i] = 20 * np.log10(np.abs(Vout))
-        phase[i] = np.angle(Vout, deg=True)
-    return mag
-
-def compute_loss(a, b):
-    return np.dot(a-b, a-b)/np.linalg.norm(b)
-
-#####################
-
-f = np.logspace(1, 6, 400)           
-
-
-
-desired_mag = np.copy(mag)
-total_mag = np.zeros_like(f, dtype=float)
-initial_loss = sys.maxsize * 2 + 1
-l = 0
-while (l < 8):
-    mags = []
-    index = np.argmax([np.dot(desired_mag, example_circs_mags[k])/(np.linalg.norm(desired_mag) * np.linalg.norm(example_circs_mags[k]))] for k in range(len(example_circs_mags)))
-    base_circ_file = example_circs[index]
-    base_circ_trans = translator.Translator('example_circuits/'+base_circ_file)
-    base_circ = base_circ_trans.circuit
-    nu = 0.00001
-    eta = 0.00001
-    max_change_factor = 0.1 
-    mag_p = example_circs_mags[index]
-    #phase_p = circuit_list[index][2]
-    phase_p = mag_p
-    for k in range(100):
-        changes = []
-        original_L = compute_loss(compute_bode(base_circ, f, mag_p, phase_p), desired_mag)
-        for comp in base_circ.components:
-            if isinstance(comp, circuit.Resistor) or isinstance(comp, circuit.Capacitor):
-                original_val = comp.value
-                epsilon = max(nu * original_val, 0.000000000001)
-                comp.value += epsilon
-                perturbed_L =  compute_loss(compute_bode(base_circ, f, mag_p, phase_p), desired_mag)
-                dLdX = (perturbed_L - original_L)/epsilon
-                change = -1 * eta * dLdX
-                comp.value = original_val
-                if abs(change) > abs(max_change_factor * comp.value):
-                    change = math.copysign(max_change_factor * comp.value, change)
-                changes.append(change)
-            else:
-                changes.append('N/A')
-
-        for i in range(len(base_circ.components)):
-            if not changes[i] == 'N/A':
-                base_circ.components[i].value = max(1e-10, base_circ.components[i].value + changes[i])
-        
-        if (k % 50 == 0):
-            mag_p = compute_bode(base_circ, f, mag_p, phase_p)
-            print(f"Optimizing Round {k}: {compute_loss(mag_p, desired_mag)}")
-    mag_p = compute_bode(base_circ, f, mag_p, phase_p)
-    loss_p = compute_loss(desired_mag, mag_p)
-    mags.append(mag_p)
-    
-    if loss_p > initial_loss:
-        break 
-    initial_loss = min(initial_loss, loss_p)
-    desired_mag = desired_mag - mag_p
-    total_mag = total_mag + mag_p
-    l += 1
-    
-
-
-plt.figure()
-plt.semilogx(f, mag)
-plt.semilogx(f, total_mag)
-plt.semilogx(f, mag - total_mag)
-plt.xlabel("Frequency (Hz)")
-plt.ylabel("Magnitude (dB)")
-plt.title("Sallen‑Key Low‑Pass Filter – Magnitude Response")
-plt.grid(True, which='both')
-plt.show()
-        
-    
     
     
