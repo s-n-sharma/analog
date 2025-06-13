@@ -297,11 +297,10 @@ class circ_optimizer:
             self.example_circs = []
             self.example_circs_mags = []
 
-            """
             
             self.all_circ = np.array(self.all_circ)
 
-            self.standardized_data = (self.all_circ - self.all_circ.mean(axis = 0)) / self.all_circ.std(axis = 0)
+            self.standardized_data = (self.all_circ - self.all_circ.mean(axis = 0)) / (self.all_circ.std(axis = 0)+0.01)
             self.covariance_matrix = np.cov(self.standardized_data, ddof = 1, rowvar = False)
             self.eigenvalues, self.eigenvectors = np.linalg.eig(self.covariance_matrix)
             self.order_of_importance = np.argsort(self.eigenvalues)[::-1]
@@ -316,11 +315,11 @@ class circ_optimizer:
                 self.example_circs.append(self.file_dic[str(self.all_circ[index])])
                 self.example_circs_mags.append(self.all_circ[index])
             
-            """
 
-            for i in range(len(self.all_circ)):
-                self.example_circs.append(self.file_dic[str(self.all_circ[i])])
-                self.example_circs_mags.append(self.all_circ[i])
+
+            # for i in range(len(self.all_circ)):
+            #     self.example_circs.append(self.file_dic[str(self.all_circ[i])])
+            #     self.example_circs_mags.append(self.all_circ[i])
 
     
     def getCircuit(self, mag, order):
@@ -334,7 +333,7 @@ class circ_optimizer:
 
         for l in range(order):
 
-            print(f"Order {i}:")
+            print(f"Order {l}:")
 
             mags = []
 

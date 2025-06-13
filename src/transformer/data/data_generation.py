@@ -1,9 +1,15 @@
 import random
 from scipy.cluster.hierarchy import DisjointSet as djs
 import translator
+import math
 
 class CircuitGeneration:
     func_num = 8
+    common_resistor_values_ohms = [10, 22, 33, 47, 68, 100, 220, 330, 470, 680, 1000, 2200, 3300, 4700, 6800, 10000, 22000, 33000, 47000, 68000, 100000, 220000, 330000, 470000, 680000, 1000000]
+    crv = common_resistor_values_ohms
+    common_capacitor_values_farads = [10e-12, 22e-12, 33e-12, 47e-12, 68e-12, 100e-12, 220e-12, 330e-12, 470e-12, 680e-12, 1e-9, 2.2e-9, 3.3e-9, 4.7e-9, 6.8e-9, 10e-9, 22e-9, 33e-9, 47e-9, 68e-9, 100e-9, 220e-9, 330e-9, 470e-9, 680e-9, 1e-6, 2.2e-6, 3.3e-6, 4.7e-6, 10e-6, 22e-6, 33e-6, 47e-6, 100e-6, 220e-6, 330e-6, 470e-6, 1000e-6]
+    ccv = common_capacitor_values_farads
+    amt = 2
     def __init__(self, number_of_functions=3):
         self.number_of_functions = number_of_functions # max number of randomly generated function in a single netlist
     
@@ -146,7 +152,233 @@ class CircuitGeneration:
 
         trans = translator.Translator('temp.txt')
         return trans.circuit
+    
+    compIDs = {0 : 'R', 1 : 'C', 2 : 'bandpass', 3 : 'inverting_amp', 4 : 'non_inverting amp', 5 : 'rc_highpass', 6 : 'rc_lowpass', 7 : 'sallen_key_highpass', 8 : 'sallen_key_lowpass', 9: 'voltage_divider'}
+    
+
+    def checker(conn, deg):
+
+        for subs in conn.subsets():
+            if not len(subs):
+                continue
+            count = 0
+            for node in subs:
+                if deg[node] < 2:
+                    count += 1
         
+            if count > 2:
+                return False
+        
+        return True
+
+            
+
+    def getCircuit2(self):
+
+        intermediate_node_number = 0
+
+        while (True):
+
+            for _ in range(math.factorial(max(10, intermediate_node_number - 2))):
+
+                conn = djs([k for k in range(2, intermediate_node_number+2)]) #intermediate nodes only
+                deg_check = {k : 0 for k in range(2, intermediate_node_number + 2)}
+
+                #first stage is to determine the layout of the circuit (what connects each node), this is randomly generated
+
+                #contains data of the form of a list of [compID, node_1, node_2]
+                #later append list of component values
+                components = [] 
+
+                inter_comp_edge_count = random.randint(0, int(1.5 * intermediate_node_number))
+
+                i = 0
+
+                while i < inter_comp_edge_count or not self.checker(conn, deg_check):
+                    
+                    node_1 = node_2 = random.randint(2, intermediate_node_number + 1)
+                    
+                    while (node_2 == node_1):
+                        node_2 = random.randint(2, intermediate_node_number + 1)
+                    
+
+                    comp_seed = random.randint(-7, 9)
+
+                    if comp_seed <= 1:
+                        comp_ID = comp_seed % 2
+                    else:
+                        comp_ID = comp_seed
+                    
+                    deg_check[node_1] += 1
+                    deg_check[node_2] += 2
+
+                    conn.merge(node_1, node_2)
+
+                    components.append([comp_ID, node_1, node_2])
+
+                    i += 1
+                
+                #now we connect each of the subsets to the Vin and Ground
+
+                for subs in conn.subsets():
+
+                    nodes = []
+
+                    for node in subs:
+
+                        if deg_check[node] == 1:
+
+                            nodes.append(node)
+                    
+                    node_1, node_2 = nodes[0], nodes[1]
+
+                    if not random.randint(0, 1):
+                        #node_1 connected to Vin
+
+                        number_of_conn = random.randint(1, 3)
+
+                        for nc in range(number_of_conn):
+
+                            comp_seed = random.randint(-7, 9)
+
+                            if comp_seed <= 1:
+                                comp_ID = comp_seed % 2
+                            else:
+                                comp_ID = comp_seed
+                            
+                            components.append([comp_ID, 1, node_1])
+
+                        number_of_conn = random.randint(1, 3)
+
+                        for nc in range(number_of_conn):
+
+                            number_of_conn = random.randint(1, 3)
+
+                        for nc in range(number_of_conn):
+
+                            comp_seed = random.randint(-7, 9)
+
+                            if comp_seed <= 1:
+                                comp_ID = comp_seed % 2
+                            else:
+                                comp_ID = comp_seed
+                            
+                            components.append([comp_ID, 0, node_2])
+                    else:
+
+                        number_of_conn = random.randint(1, 3)
+
+                        for nc in range(number_of_conn):
+
+                            comp_seed = random.randint(-7, 9)
+
+                            if comp_seed <= 1:
+                                comp_ID = comp_seed % 2
+                            else:
+                                comp_ID = comp_seed
+                            
+                            components.append([comp_ID, 1, node_2])
+
+                        number_of_conn = random.randint(1, 3)
+
+                        for nc in range(number_of_conn):
+
+                            number_of_conn = random.randint(1, 3)
+
+                        for nc in range(number_of_conn):
+
+                            comp_seed = random.randint(-7, 9)
+
+                            if comp_seed <= 1:
+                                comp_ID = comp_seed % 2
+                            else:
+                                comp_ID = comp_seed
+                            
+                            components.append([comp_ID, 0, node_1])
+
+                #the second is to assign values to each of the components in the circuit
+
+                part = []
+
+                r_count = 0
+                c_count = 0
+                tc = 0
+
+                for comp in components:
+
+                    if comp[0] == 0:
+                        r_count += 1
+                        comp.append([f'R{r_count}'])
+                        comp.append([random.sample(self.crv, self.amt)])
+                        tc += 1
+
+                    if comp[0] == 1:
+                        c_count += 1
+                        comp.append([f'C{c_count}'])
+                        comp.append([random.sample(self.crv, self.amt)])
+                        tc += 1
+
+                    
+                    if comp[0] == 2: #bandpass
+                        comp.append(['R1, C1, R2, C2'])
+                        comp.append([random.sample(self.crv, self.amt), random.sample(self.ccv, self.amt), random.sample(self.crv, self.amt), random.sample(self.ccv, self.amt)])
+                        tc += 1
+
+
+                    if comp[0] == 3: #inverting_amp
+                        comp.append(['R1', 'R2'])
+                        comp.append([random.sample(self.crv, self.amt), random.sample(self.crv, self.amt)])
+                        tc += 1
+
+                    
+                    if comp[0] == 4: #non_inverting_amp
+                        comp.append(['R1', 'R2'])
+                        comp.append([random.sample(self.crv, self.amt), random.sample(self.crv, self.amt)])
+                        tc += 1
+
+                    
+                    if comp[0] == 5: #rc_highpass
+                        comp.append(['R', 'C'])
+                        comp.append([random.sample(self.crv, self.amt), random.sample(self.crv, self.amt)])
+                        tc += 1
+
+                    
+                    if comp[0] == 6: #rc_lowpass
+                        comp.append(['R', 'C'])
+                        comp.append([random.sample(self.crv, self.amt), random.sample(self.crv, self.amt)])
+                        tc += 1
+
+                    
+                    if comp[0] == 7: #sallen_key_highpass
+                        comp.append(['R1', 'R2', 'C1', 'C2'])
+                        comp.append([random.sample(self.crv, self.amt), random.sample(self.crv, self.amt), random.sample(self.ccv, self.amt), random.sample(self.ccv, self.amt)])
+                        tc += 1
+
+                    
+                    if comp[0] == 8: 
+                        comp.append(['R1', 'R2', 'C1', 'C2'])
+                        comp.append([random.sample(self.crv, self.amt), random.sample(self.crv, self.amt), random.sample(self.ccv, self.amt), random.sample(self.ccv, self.amt)])
+                        tc += 1
+
+                    
+                    if comp[0] == 9:
+                        comp.append(['R1', 'R2'])
+                        comp.append([random.sample(self.crv, self.amt), random.sample(self.crv, self.amt)])
+                        tc += 1
+
+
+                        
+
+
+                
+
+
+
+                        
+
+
+
+
 
 
 
