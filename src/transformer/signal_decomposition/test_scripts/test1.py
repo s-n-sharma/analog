@@ -8,6 +8,41 @@ import torch
 from model.transformer import SignalDecompositionTransformer
 from data.generation import generate_signal1, generate_signal2
 
+def load_model_and_normalization():
+    """Load the trained model and normalization parameters."""
+    model = SignalDecompositionTransformer(
+        seq_len=128, in_channels=1, d_model=768, nhead=12, 
+        num_layers=4, dim_feedforward=2048, out_channels=2, upsampled_len=512
+    )
+    
+    model_path = os.path.join(os.path.dirname(__file__), '..', 'output_models', 'signal_decomposition_transformer.pth')
+    norm_path = os.path.join(os.path.dirname(__file__), '..', 'output_models', 'normalization_params.npz')
+    
+    if os.path.exists(model_path):
+        model.load_state_dict(torch.load(model_path, map_location='cpu'))
+        print("✅ Trained model loaded successfully")
+    else:
+        print("⚠️  Model file not found - using untrained model for demo")
+    
+    # Load normalization parameters
+    norm_params = None
+    if os.path.exists(norm_path):
+        norm_data = np.load(norm_path)
+        norm_params = {
+            'X_mean': float(norm_data['X_mean']),
+            'X_std': float(norm_data['X_std']),
+            'Y_mean': float(norm_data['Y_mean']),
+            'Y_std': float(norm_data['Y_std'])
+        }
+        print("✅ Normalization parameters loaded")
+        print(f"   Input: mean={norm_params['X_mean']:.2f}, std={norm_params['X_std']:.2f}")
+        print(f"   Output: mean={norm_params['Y_mean']:.2f}, std={norm_params['Y_std']:.2f}")
+    else:
+        print("⚠️  Normalization parameters not found - using raw values")
+    
+    model.eval()
+    return model, norm_params
+
 def main_demo():
     """
     Main demonstration showing:
@@ -17,21 +52,9 @@ def main_demo():
     print("🎯 Filter Decomposition Transformer Demo")
     print("=" * 45)
     
-    # Load the trained model
-    print("📥 Loading model...")
-    model = SignalDecompositionTransformer(
-        seq_len=128, in_channels=1, d_model=512, nhead=8, 
-        num_layers=2, dim_feedforward=1024, out_channels=2, upsampled_len=512
-    )
-    
-    model_path = os.path.join(os.path.dirname(__file__), '..', 'output_models', 'signal_decomposition_transformer.pth')
-    if os.path.exists(model_path):
-        model.load_state_dict(torch.load(model_path, map_location='cpu'))
-        print("✅ Trained model loaded successfully")
-    else:
-        print("⚠️  Model file not found - using untrained model for demo")
-    
-    model.eval()
+    # Load the trained model and normalization parameters
+    print("📥 Loading model and normalization...")
+    model, norm_params = load_model_and_normalization()
     
     # Generate example filter responses
     print("🔧 Generating filter responses...")
@@ -51,8 +74,20 @@ def main_demo():
     print("🤖 Running model prediction...")
     x_input = torch.tensor(mixed_signal, dtype=torch.float32).unsqueeze(0).unsqueeze(-1)
     
+    # Apply input normalization if available
+    if norm_params:
+        x_input_norm = (x_input - norm_params['X_mean']) / norm_params['X_std']
+    else:
+        x_input_norm = x_input
+        print("⚠️  Using unnormalized input")
+    
     with torch.no_grad():
-        predictions = model(x_input)  # Shape: (1, 2, 512)
+        predictions = model(x_input_norm)  # Shape: (1, 2, 512)
+        
+        # Denormalize predictions if normalization was used
+        if norm_params:
+            predictions = predictions * norm_params['Y_std'] + norm_params['Y_mean']
+        
         lowpass_predicted = predictions[0, 0, :].numpy()
         highpass_predicted = predictions[0, 1, :].numpy()
     
@@ -71,25 +106,27 @@ def main_demo():
     axes[0, 0].semilogx(freq_input, lowpass_curve, 'b-', linewidth=4, alpha=0.8)
     axes[0, 0].set_title(f'Lowpass Filter Response\n(fc = {fc_lowpass} Hz)', 
                         fontsize=14, fontweight='bold', pad=15)
-    axes[0, 0].set_ylabel('Magnitude', fontsize=12)
+    axes[0, 0].set_ylabel('Magnitude (dB)', fontsize=12)
     axes[0, 0].grid(True, alpha=0.4)
-    axes[0, 0].set_ylim([0, 1.1])
+    axes[0, 0].set_ylim([-60, 5])  # Typical dB range for filters
     axes[0, 0].set_xlim([1e-1, 1e6])
     
     # Plot 2: Highpass curve
     axes[0, 1].semilogx(freq_input, highpass_curve, 'r-', linewidth=4, alpha=0.8)
     axes[0, 1].set_title(f'Highpass Filter Response\n(fc = {fc_highpass} Hz)', 
                         fontsize=14, fontweight='bold', pad=15)
+    axes[0, 1].set_ylabel('Magnitude (dB)', fontsize=12)
     axes[0, 1].grid(True, alpha=0.4)
-    axes[0, 1].set_ylim([0, 1.1])
+    axes[0, 1].set_ylim([-60, 5])  # Typical dB range for filters
     axes[0, 1].set_xlim([1e-1, 1e6])
     
     # Plot 3: Mixed signal
     axes[0, 2].semilogx(freq_input, mixed_signal, 'g-', linewidth=4, alpha=0.9)
     axes[0, 2].set_title('Mixed Signal\n(Lowpass + Highpass)', 
                         fontsize=14, fontweight='bold', color='darkgreen', pad=15)
+    axes[0, 2].set_ylabel('Magnitude (dB)', fontsize=12)
     axes[0, 2].grid(True, alpha=0.4)
-    axes[0, 2].set_ylim([0, 2.2])
+    axes[0, 2].set_ylim([-60, 10])  # Mixed signal can be slightly higher
     axes[0, 2].set_xlim([1e-1, 1e6])
     
     # === BOTTOM ROW: MODEL PREDICTIONS ===
@@ -98,9 +135,9 @@ def main_demo():
     axes[1, 0].set_title('Model Predicted Lowpass', 
                         fontsize=14, fontweight='bold', color='darkblue', pad=15)
     axes[1, 0].set_xlabel('Frequency (Hz)', fontsize=12)
-    axes[1, 0].set_ylabel('Magnitude', fontsize=12)
+    axes[1, 0].set_ylabel('Magnitude (dB)', fontsize=12)
     axes[1, 0].grid(True, alpha=0.4)
-    axes[1, 0].set_ylim([0, 1.1])
+    axes[1, 0].set_ylim([-60, 5])
     axes[1, 0].set_xlim([1e-1, 1e6])
     
     # Plot 5: Predicted highpass
@@ -108,8 +145,9 @@ def main_demo():
     axes[1, 1].set_title('Model Predicted Highpass', 
                         fontsize=14, fontweight='bold', color='darkred', pad=15)
     axes[1, 1].set_xlabel('Frequency (Hz)', fontsize=12)
+    axes[1, 1].set_ylabel('Magnitude (dB)', fontsize=12)
     axes[1, 1].grid(True, alpha=0.4)
-    axes[1, 1].set_ylim([0, 1.1])
+    axes[1, 1].set_ylim([-60, 5])
     axes[1, 1].set_xlim([1e-1, 1e6])
     
     # Plot 6: Reconstructed mixed signal
@@ -118,8 +156,9 @@ def main_demo():
     axes[1, 2].set_title('Model Reconstructed Mixed', 
                         fontsize=14, fontweight='bold', color='purple', pad=15)
     axes[1, 2].set_xlabel('Frequency (Hz)', fontsize=12)
+    axes[1, 2].set_ylabel('Magnitude (dB)', fontsize=12)
     axes[1, 2].grid(True, alpha=0.4)
-    axes[1, 2].set_ylim([0, 2.2])
+    axes[1, 2].set_ylim([-60, 10])
     axes[1, 2].set_xlim([1e-1, 1e6])
     
     # Add row labels on the left

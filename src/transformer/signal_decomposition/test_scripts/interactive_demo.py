@@ -11,8 +11,8 @@ from data.generation import generate_signal1, generate_signal2
 def load_model():
     """Load the trained model."""
     model = SignalDecompositionTransformer(
-        seq_len=128, in_channels=1, d_model=512, nhead=8, 
-        num_layers=2, dim_feedforward=1024, out_channels=2, upsampled_len=512
+        seq_len=128, in_channels=1, d_model=768, nhead=12, 
+        num_layers=4, dim_feedforward=2048, out_channels=2, upsampled_len=512
     )
     
     model_path = os.path.join(os.path.dirname(__file__), '..', 'output_models', 'signal_decomposition_transformer.pth')
@@ -60,41 +60,45 @@ def test_custom_filters(fc_lowpass=1000, fc_highpass=5000):
     # Row 1: INPUT DATA
     axes[0, 0].semilogx(freq_input, lowpass_true, 'b-', linewidth=3)
     axes[0, 0].set_title(f'INPUT: Lowpass Filter\n(fc = {fc_lowpass} Hz)', fontweight='bold')
-    axes[0, 0].set_ylabel('Magnitude')
+    axes[0, 0].set_ylabel('Magnitude (dB)')
     axes[0, 0].grid(True, alpha=0.3)
-    axes[0, 0].set_ylim([0, 1.1])
+    axes[0, 0].set_ylim([-60, 5])
     
     axes[0, 1].semilogx(freq_input, highpass_true, 'r-', linewidth=3)
     axes[0, 1].set_title(f'INPUT: Highpass Filter\n(fc = {fc_highpass} Hz)', fontweight='bold')
+    axes[0, 1].set_ylabel('Magnitude (dB)')
     axes[0, 1].grid(True, alpha=0.3)
-    axes[0, 1].set_ylim([0, 1.1])
+    axes[0, 1].set_ylim([-60, 5])
     
     axes[0, 2].semilogx(freq_input, mixed_signal, 'g-', linewidth=3)
     axes[0, 2].set_title('INPUT: Mixed Signal\n(Lowpass + Highpass)', fontweight='bold', color='darkgreen')
+    axes[0, 2].set_ylabel('Magnitude (dB)')
     axes[0, 2].grid(True, alpha=0.3)
-    axes[0, 2].set_ylim([0, 2.2])
+    axes[0, 2].set_ylim([-60, 10])
     
     # Row 2: MODEL PREDICTIONS
     axes[1, 0].semilogx(freq_output, lowpass_pred, 'b--', linewidth=3, alpha=0.8)
     axes[1, 0].set_title('MODEL: Predicted Lowpass', fontweight='bold', color='darkblue')
     axes[1, 0].set_xlabel('Frequency (Hz)')
-    axes[1, 0].set_ylabel('Magnitude')
+    axes[1, 0].set_ylabel('Magnitude (dB)')
     axes[1, 0].grid(True, alpha=0.3)
-    axes[1, 0].set_ylim([0, 1.1])
+    axes[1, 0].set_ylim([-60, 5])
     
     axes[1, 1].semilogx(freq_output, highpass_pred, 'r--', linewidth=3, alpha=0.8)
     axes[1, 1].set_title('MODEL: Predicted Highpass', fontweight='bold', color='darkred')
     axes[1, 1].set_xlabel('Frequency (Hz)')
+    axes[1, 1].set_ylabel('Magnitude (dB)')
     axes[1, 1].grid(True, alpha=0.3)
-    axes[1, 1].set_ylim([0, 1.1])
+    axes[1, 1].set_ylim([-60, 5])
     
     # Reconstructed mixed signal
     reconstructed = lowpass_pred + highpass_pred
     axes[1, 2].semilogx(freq_output, reconstructed, 'purple', linewidth=3, alpha=0.8)
     axes[1, 2].set_title('MODEL: Reconstructed Mixed', fontweight='bold', color='purple')
     axes[1, 2].set_xlabel('Frequency (Hz)')
+    axes[1, 2].set_ylabel('Magnitude (dB)')
     axes[1, 2].grid(True, alpha=0.3)
-    axes[1, 2].set_ylim([0, 2.2])
+    axes[1, 2].set_ylim([-60, 10])
     
     # Add side labels
     fig.text(0.02, 0.75, 'INPUT\nDATA', fontsize=14, fontweight='bold', 

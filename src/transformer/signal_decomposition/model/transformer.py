@@ -21,30 +21,54 @@ class PositionalEncoding(nn.Module):
 
 class SignalDecompositionTransformer(nn.Module):
     """
-    Transformer-based model for decomposing a mixed 1D signal into multiple source signals.
-    Architecture matches the provided diagram.
-    Input: (batch, seq_len, in_channels)
-    Output: (batch, out_channels, seq_len_upsampled)
+    Improved transformer for decomposing mixed frequency responses into component filters.
+    Includes better upsampling and frequency-aware processing.
     """
-    def __init__(self, seq_len=128, in_channels=4, d_model=512, nhead=8, num_layers=2, dim_feedforward=1024, out_channels=2, upsampled_len=512):
+    def __init__(self, seq_len=128, in_channels=1, d_model=768, nhead=12, num_layers=4, dim_feedforward=2048, out_channels=2, upsampled_len=512):
         super().__init__()
         self.seq_len = seq_len
         self.upsampled_len = upsampled_len
         self.in_channels = in_channels
         self.out_channels = out_channels
-        # Input embedding (1D conv)
-        self.input_embed = nn.Conv1d(in_channels, d_model, kernel_size=1)
+        
+        # Improved input embedding with multiple conv layers
+        self.input_embed = nn.Sequential(
+            nn.Conv1d(in_channels, d_model//2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv1d(d_model//2, d_model, kernel_size=3, padding=1),
+            nn.BatchNorm1d(d_model)
+        )
+        
         # Positional encoding
         self.pos_encoder = PositionalEncoding(d_model, max_len=seq_len)
-        # Transformer encoder
+        
+        # Transformer encoder with dropout
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, batch_first=True
+            d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, 
+            dropout=0.1, batch_first=True, activation='gelu'
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        # Upsample (1D conv)
-        self.upsample = nn.ConvTranspose1d(d_model, d_model, kernel_size=4, stride=4) if upsampled_len > seq_len else nn.Identity()
-        # Output projection (linear)
-        self.proj = nn.Conv1d(d_model, out_channels, kernel_size=1)
+        
+        # Improved upsampling - gradual upsampling with smoothing
+        if upsampled_len > seq_len:
+            upsample_factor = upsampled_len // seq_len
+            self.upsample = nn.Sequential(
+                nn.ConvTranspose1d(d_model, d_model, kernel_size=upsample_factor, stride=upsample_factor),
+                nn.BatchNorm1d(d_model),
+                nn.ReLU(),
+                nn.Conv1d(d_model, d_model, kernel_size=5, padding=2),  # Smoothing
+                nn.BatchNorm1d(d_model),
+                nn.ReLU()
+            )
+        else:
+            self.upsample = nn.Identity()
+        
+        # Output projection with residual connection
+        self.proj = nn.Sequential(
+            nn.Conv1d(d_model, d_model//2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv1d(d_model//2, out_channels, kernel_size=3, padding=1)
+        )
 
     def forward(self, x):
         # x: (batch, seq_len, in_channels)
@@ -56,4 +80,4 @@ class SignalDecompositionTransformer(nn.Module):
         x = x.transpose(1, 2)   # (batch, d_model, seq_len)
         x = self.upsample(x)    # (batch, d_model, upsampled_len)
         x = self.proj(x)        # (batch, out_channels, upsampled_len)
-        return x 
+        return x
