@@ -19,7 +19,7 @@ def load_model_and_normalization():
     norm_path = os.path.join(os.path.dirname(__file__), '..', 'output_models', 'normalization_params.npz')
     
     if os.path.exists(model_path):
-        model.load_state_dict(torch.load(model_path, map_location='cpu'))
+        model.load_state_dict(torch.load(model_path, map_location='cpu', weights_only=False))
         print("✅ Trained model loaded successfully")
     else:
         print("⚠️  Model file not found - using untrained model for demo")

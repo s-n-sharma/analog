@@ -10,8 +10,6 @@ The codebase consists of three main components that work together to provide end
 - **Circuit.py**: Core circuit simulator using Modified Nodal Analysis (MNA)
 - **translator.py**: SPICE-like netlist parser with subcircuit and function support
 - **plotter.py**: Frequency response visualization (Bode plots)
-- **optimization.py**: Interactive circuit parameter optimization
-- **circuitgen.py**: Random circuit topology generation
 
 ### 2. Signal Decomposition Transformer (`src/transformer/signal_decomposition/`)
 - **Transformer model**: Decomposes mixed filter responses into constituent components
