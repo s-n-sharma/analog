@@ -1,17 +1,17 @@
-# 📁 cutoff_predictor/data_generator.py
+# 📁 cutoff_predictor/data_generator.py (Improved)
 
 import numpy as np
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 
-# This must match the model's expected input size
+# input size 
 NUM_FREQ_POINTS = 512 
-# Frequency range for our generated data
-FREQ_RANGE_HZ = np.logspace(2, 5, NUM_FREQ_POINTS) # 100 Hz to 100 kHz
+FREQ_RANGE_HZ = np.logspace(2, 5, NUM_FREQ_POINTS)
 
 def generate_filter_data(num_samples, filter_type='lowpass'):
     """
-    Generates a dataset of ideal filter responses and their cutoff frequencies.
+    Generates a dataset of ideal filter responses with added shape distortion
+    and noise for more robust training.
     
     Args:
         num_samples (int): The number of filter curves to generate.
@@ -20,21 +20,16 @@ def generate_filter_data(num_samples, filter_type='lowpass'):
     Returns:
         Tuple[np.array, np.array]: A tuple of (filter_responses, log_cutoff_freqs).
     """
-    # X data: the filter curves
     responses = np.zeros((num_samples, NUM_FREQ_POINTS))
-    # y data: the cutoff frequencies (we will store their log)
     log_cutoffs = np.zeros(num_samples)
-    
-    # Define the range for random cutoff frequencies (e.g., 500 Hz to 50 kHz)
     min_fc = 500
     max_fc = 50000
 
     for i in range(num_samples):
-        # Generate a random cutoff frequency within the range
         fc = np.random.uniform(min_fc, max_fc)
         log_cutoffs[i] = np.log10(fc)
         
-        # Generate the ideal Bode plot for this cutoff frequency
+        # Generate the ideal 1st-order Bode plot
         omega = 2 * np.pi * FREQ_RANGE_HZ
         omega_c = 2 * np.pi * fc
         
@@ -45,9 +40,22 @@ def generate_filter_data(num_samples, filter_type='lowpass'):
             magnitude = ratio / np.sqrt(1 + ratio**2)
         else:
             raise ValueError("filter_type must be 'lowpass' or 'highpass'")
-            
-        # Convert to dB and add a small amount of noise to make training more robust
-        responses[i, :] = 20 * np.log10(magnitude) + np.random.normal(0, 0.1, NUM_FREQ_POINTS)
+        
+        # Convert to dB
+        response_db = 20 * np.log10(np.maximum(magnitude, 1e-5))
+
+        # shape distortion 
+        distortion_amplitude = np.random.uniform(0.5, 2.0) # dB
+        distortion_frequency = np.random.uniform(0.5, 2.0)
+        distortion_phase = np.random.uniform(0, 2 * np.pi)
+        
+        # Create a distortion wave over the log-spaced frequency points
+        distortion = distortion_amplitude * np.sin(
+            distortion_frequency * np.linspace(0, 2 * np.pi, NUM_FREQ_POINTS) + distortion_phase
+        )
+        
+        # Add the distortion and some small random noise
+        responses[i, :] = response_db #+ distortion + np.random.normal(0, 0.2, NUM_FREQ_POINTS)
 
     # Reshape for the CNN (batch, channels, length)
     responses = responses.reshape(-1, 1, NUM_FREQ_POINTS)

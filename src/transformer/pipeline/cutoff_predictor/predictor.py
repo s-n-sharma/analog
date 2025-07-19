@@ -19,7 +19,6 @@ class CutoffPredictor:
         model_path = os.path.join(MODEL_SAVE_DIR, f"{model_type}_cutoff_predictor.pth")
         
         if not os.path.exists(model_path):
-            # This error is now much more reliable and clearer
             raise FileNotFoundError(f"Model not found at the expected location: {model_path}\nPlease ensure you have run the training script first")
             
         self.model.load_state_dict(torch.load(model_path, map_location=self.device))

@@ -17,10 +17,8 @@ The codebase consists of three main components that work together to provide end
 - **Training pipeline**: End-to-end training with normalization and caching
 - **Test scripts**: Comprehensive evaluation and demo tools
 
-### 3. Neural Circuit Synthesis (`src/transformer/neural_network/`)
-- **Signal-to-circuit mapping**: Converts frequency responses to circuit parameters
-- **Functional circuit generation**: Learns to synthesize parametric circuits
-- **Data generation**: Creates training datasets for various circuit types
+### 3. Neural Circuit Synthesis (`src/transformer/pipeline/`)
+- **Signal-to-circuit mapping**: 
 
 ## Circuit Blocks
 ### How to write circuits
